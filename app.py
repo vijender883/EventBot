@@ -566,8 +566,11 @@ def payload_too_large(error):
 
 if __name__ == '__main__':
     # Development server
+    port = int(os.getenv('PORT', 5000))
+    debug = os.getenv('FLASK_ENV') == 'development'
+    
     app.run(
         host='0.0.0.0',
-        port=int(os.getenv('PORT', 5000)),
-        debug=os.getenv('FLASK_ENV') == 'development'
+        port=port,
+        debug=debug
     )
