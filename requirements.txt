@@ -1,0 +1,22 @@
+# Flask Backend Requirements
+flask
+flask-cors
+werkzeug
+
+# AI/ML Dependencies
+google-generativeai
+pinecone
+langchain
+langchain-community
+langchain-pinecone
+langchain-google-genai
+
+# PDF Processing
+pypdf
+
+# Utilities
+python-dotenv
+requests
+
+# Development (optional)
+gunicorn
