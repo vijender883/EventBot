@@ -215,17 +215,7 @@ Now, please answer this question: {question}
                 "success": False,
                 "error": str(e)
             }
-    
-    def _generate_suggested_questions(self, context: str, current_question: str) -> List[str]:
-        """Generate suggested questions based on context"""
-        # Suggested questions functionality removed
-        return []
-    
-    def _should_show_enrollment(self, answer: str, question: str) -> bool:
-        """Determine if enrollment prompt should be shown"""
-        # Show enrollment functionality removed
-        return False
-    
+       
     def upload_pdf(self, file_path: str, user_id: str = None) -> bool:
         """
         Upload and process a PDF file to the vector database
