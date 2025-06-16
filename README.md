@@ -23,7 +23,7 @@ A Flask-based backend service that integrates with Google Gemini AI and Pinecone
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/pdf-assistant-backend.git
+git clone https://github.com/vijender883/Chatbot_Pinecone_flask_backend
 cd pdf-assistant-backend
 ```
 
