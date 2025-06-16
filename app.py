@@ -38,11 +38,16 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # Enable CORS for Streamlit integration
 
+########################################################################
+
 # Configuration
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 ALLOWED_EXTENSIONS = {'pdf'}
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+########################################################################
+
 
 class EventBot:
     """
@@ -322,6 +327,10 @@ Now, please answer this question: {question}
         
         return status
 
+
+
+########################################################################
+
 # Initialize EventBot instance
 try:
     event_bot = EventBot()
@@ -329,6 +338,9 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize EventBot: {e}")
     event_bot = None
+
+
+########################################################################
 
 def allowed_file(filename):
     """Check if the uploaded file is allowed"""
@@ -341,6 +353,7 @@ def validate_request_size():
         return False
     return True
 
+########################################################################
 # Flask Routes
 
 @app.route('/health', methods=['GET'])
@@ -553,6 +566,9 @@ def payload_too_large(error):
         "message": f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB",
         "error": "Payload too large"
     }), 413
+
+
+########################################################################
 
 if __name__ == '__main__':
     # Development server
