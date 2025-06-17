@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Flask Backend for PDF Assistant Chatbot
+Flask Backend powers a chatbot that can answer questions from PDFs.
 Integrates with EventBot for question answering and PDF document upload
 """
 
