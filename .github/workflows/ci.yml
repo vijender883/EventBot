@@ -1,1 +1,59 @@
 # Auto-run tests on push/PR to ensure nothing breaks.
+# .github/workflows/ci.yml
+
+name: Python CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12' # Use a specific Python version, e.g., 3.12 or 3.x
+        cache: 'pip' # Cache pip dependencies
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # Install main requirements
+        pip install -r requirements.txt
+        # Install development/test requirements
+        pip install -r requirements-dev.txt
+
+    - name: Set PYTHONPATH
+      # Set PYTHONPATH to the current working directory to ensure 'src' module is found
+      run: echo "PYTHONPATH=$(pwd)" >> $GITHUB_ENV
+
+    - name: Run tests with pytest
+      run: |
+        # Change to the project root directory where the 'tests' folder is located
+        pytest -v
+
+    - name: Run linting with Flake8
+      run: |
+        flake8 src/ tests/
+
+    - name: Check code formatting with Black
+      run: |
+        # --check makes Black only report errors, not fix them
+        # --diff shows the differences if files are not formatted correctly
+        black --check --diff src/ tests/
+
+    - name: Check import sorting with isort
+      run: |
+        # --check-only makes isort only report errors, not fix them
+        isort --check-only src/ tests/
+

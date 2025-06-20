@@ -6,7 +6,7 @@ labels: ''
 assignees: ''
 ---
 
-**NOTE**: Please ensure you have read the [CONTRIBUTING.md](CONTRIBUTING.md) before submitting your pull request.
+**NOTE**: Please ensure you have read the [CONTRIBUTING.md](/CONTRIBUTING.md) before submitting your pull request.
 
 ## ✨ Type of Change
 

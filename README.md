@@ -24,7 +24,7 @@ A Flask-based backend service that integrates with Google Gemini AI and Pinecone
 
 ```bash
 git clone https://github.com/vijender883/Chatbot_Pinecone_flask_backend
-cd pdf-assistant-backend
+cd Chatbot_Pinecone_flask_backend
 ```
 
 ### 2. Create and Activate Virtual Environment
