@@ -30,3 +30,6 @@ temp/
 # OS
 .DS_Store
 Thumbs.db
+
+# testing
+.pytest_cache
