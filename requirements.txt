@@ -3,6 +3,12 @@ flask
 flask-cors
 werkzeug
 
+
+# Frontend Requirments
+streamlit
+requests
+dotenv
+
 # AI/ML Dependencies
 google-generativeai
 pinecone

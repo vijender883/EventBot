@@ -1,5 +1,5 @@
 # One-liners for installing, testing, linting, and formatting.
-.PHONY: install test lint format clean run
+.PHONY: install test lint format clean flush-all run-backend run-frontend
 
 # Define the project root as PYTHONPATH
 # This ensures Python can find modules like 'src.backend'
@@ -41,6 +41,9 @@ clean:
 	clear
 
 # Run the Flask application
-run:
+run-backend:
 	python app.py
 
+# Run the Streamlit application
+run-frontend:
+	streamlit run ./src/frontend/streamlit_app.py
