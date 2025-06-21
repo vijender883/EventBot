@@ -1,4 +1,4 @@
-# src/chatbot_backend/routes/chat.py
+# src/backend/routes/chat.py
 
 import os
 import tempfile

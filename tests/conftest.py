@@ -5,9 +5,9 @@ import os
 from unittest.mock import MagicMock
 
 # Import necessary components from your application
-from src.chatbot_backend import create_app
-from src.chatbot_backend.agents.rag_agent import ChatbotAgent
-from src.chatbot_backend.config import Config
+from src.backend import create_app
+from src.backend.agents.rag_agent import ChatbotAgent
+from src.backend.config import Config
 
 @pytest.fixture(scope='session', autouse=True)
 def setup_test_env_vars():
@@ -60,11 +60,11 @@ def app_client(mocker):
 
     # When create_app is called, we want it to use our mocked agent.
     # We will patch the ChatbotAgent class during app creation.
-    mocker.patch('src.chatbot_backend.agents.rag_agent.ChatbotAgent', return_value=mock_chatbot_agent)
+    mocker.patch('src.backend.agents.rag_agent.ChatbotAgent', return_value=mock_chatbot_agent)
     
     # Patch the initialization of ChatbotAgent in __init__.py directly
     # This ensures that `app.chatbot_agent` gets our mock.
-    mocker.patch('src.chatbot_backend.__init__.ChatbotAgent', return_value=mock_chatbot_agent)
+    mocker.patch('src.backend.__init__.ChatbotAgent', return_value=mock_chatbot_agent)
 
     app = create_app()
     app.config['TESTING'] = True

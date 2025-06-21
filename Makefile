@@ -2,7 +2,7 @@
 .PHONY: install test lint format clean run
 
 # Define the project root as PYTHONPATH
-# This ensures Python can find modules like 'src.chatbot_backend'
+# This ensures Python can find modules like 'src.backend'
 export PYTHONPATH := $(shell pwd)
 
 # Install dependencies for the main application

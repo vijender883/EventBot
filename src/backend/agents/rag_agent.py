@@ -1,4 +1,4 @@
-# src/chatbot_backend/agents/rag_agent.py
+# src/backend/agents/rag_agent.py
 
 import os
 import time
