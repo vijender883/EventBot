@@ -26,12 +26,19 @@ format:
 	isort src/ tests/
 
 # Clean up build artifacts and cache
-clean:
+flush-all:
 	find . -type f -name "*.pyc" -delete
 	find . -type d -name "__pycache__" -delete
 	rm -rf .pytest_cache
 	rm -rf .coverage
 	rm -rf venv
+
+clean:
+	find . -type f -name "*.pyc" -delete
+	find . -type d -name "__pycache__" -delete
+	rm -rf .pytest_cache
+	rm -rf .coverage
+	clear
 
 # Run the Flask application
 run:
