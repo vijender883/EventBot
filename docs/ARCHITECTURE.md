@@ -186,7 +186,7 @@ Client --(POST /answer + JSON Query)--> [Flask App: routes/chat.py]
 
 ## 5. Configuration Management
 
--   Configuration is centralized in the `Config` class (`src/chatbot_backend/config.py`).
+-   Configuration is centralized in the `Config` class (`src/backend/config.py`).
 -   **Source**: Primarily loaded from environment variables (`os.getenv()`), allowing for different settings per environment (dev, prod) and keeping secrets out of the codebase.
 -   **`.env` Files**: For local development, a `.env` file at the project root is used to set these environment variables. Flask's `python-dotenv` integration typically loads this automatically. This file is gitignored.
 -   **Content**: Includes API keys (`GEMINI_API_KEY`, `PINECONE_API_KEY`), Pinecone connection details (`PINECONE_INDEX_NAME`, `PINECONE_CLOUD`, `PINECONE_REGION`), Flask settings (`FLASK_ENV`, `PORT`), and application parameters (`MAX_FILE_SIZE`).
