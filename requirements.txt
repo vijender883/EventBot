@@ -28,4 +28,4 @@ sqlalchemy
 pydantic      # validate LLM JSON
 uvicorn
 fastapi
-
+camelot-py[cv]
