@@ -94,33 +94,67 @@ PINECONE_REGION="us-east-1"                  # Your Pinecone index region (e.g.,
 
 # Optional: Logging Level
 LOG_LEVEL=INFO # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Frontend Configuration
+ENDPOINT="http://localhost:5000" # URL for the backend API
 ```
 **Important**:
 - Replace placeholder values with your actual credentials and configuration details.
 - Ensure `PINECONE_INDEX_NAME`, `PINECONE_CLOUD`, and `PINECONE_REGION` in `.env` precisely match your Pinecone index settings.
+- The `ENDPOINT` variable is used by the Streamlit frontend to connect to the backend API. The default `http://localhost:5000` assumes the backend is running locally on port 5000. Adjust if your backend is hosted elsewhere or on a different port.
 - The `.env` file is included in `.gitignore` and should not be committed to version control.
 
 ### 3. Verify Configuration
 
-After setting up `.env` and activating your virtual environment, run this command from the project root to check if variables are loaded:
+After setting up `.env` and activating your virtual environment, run this command from the project root to check if backend variables are loaded:
 
 ```bash
 python -c "from dotenv import load_dotenv; import os; load_dotenv(); print(f\"Gemini Key Loaded: {bool(os.getenv('GEMINI_API_KEY'))}\"); print(f\"Pinecone Key Loaded: {bool(os.getenv('PINECONE_API_KEY'))}\"); print(f\"Pinecone Index: {os.getenv('PINECONE_INDEX_NAME')}\")"
 ```
 This should output `True` for keys being loaded and display your Pinecone index name.
 
+To check if the frontend `ENDPOINT` variable is loaded:
+```bash
+python -c "from dotenv import load_dotenv; import os; load_dotenv(); print(f\"Endpoint: {os.getenv('ENDPOINT')}\")"
+```
+This should display the endpoint URL, e.g., `Endpoint: http://localhost:5000`.
+
 ## 🚀 Running Locally
 
-### 1. Start the Flask Server
+The application consists of two main parts: the Flask backend and the Streamlit frontend. Both need to be running to use the application. You can use the `Makefile` for convenience.
+
+### 1. Start the Backend Server
 
 With your virtual environment activated and `.env` file configured:
 
+Using Makefile:
+```bash
+make run-backend
+```
+Alternatively, run directly:
 ```bash
 python app.py
 ```
-The server will typically start on `http://localhost:5000` (or the `PORT` specified in `.env`).
+The backend server will typically start on `http://localhost:5000` (or the `PORT` specified in `.env`).
 
-### 2. Test the API
+### 2. Start the Frontend Application
+
+Once the backend server is running:
+
+1.  **Ensure `ENDPOINT` is set**: The Streamlit frontend needs the `ENDPOINT` environment variable to point to your running backend. If you followed the `.env` configuration step and your backend is at `http://localhost:5000`, this should be correctly set.
+2.  **Run the frontend**:
+
+    Using Makefile:
+    ```bash
+    make run-frontend
+    ```
+    Alternatively, run directly:
+    ```bash
+    streamlit run src/frontend/streamlit_app.py
+    ```
+The Streamlit application will typically open in your web browser at `http://localhost:8501`. You can now upload PDFs and chat with the assistant through this interface.
+
+### 3. Test the API (Optional)
 
 Use `curl` or an API client like Postman to interact with the endpoints.
 
@@ -233,6 +267,11 @@ In your Render service's dashboard, navigate to the "Environment" section. Add t
 -   `PINECONE_REGION`: `Your_Pinecone_region` (e.g., `us-east-1`)
 -   `FLASK_ENV`: `production` (Reinforces the setting in `start.sh`)
 -   `PYTHON_VERSION`: Optionally specify your Python version (e.g., `3.10.0`) if needed.
+
+**Note on Frontend Deployment**: The above Render.com instructions are for deploying the Flask backend. Deploying the Streamlit frontend typically requires a separate service or a different setup. You might:
+-   Deploy it as a separate Web Service on Render, configuring its start command as `streamlit run src/frontend/streamlit_app.py --server.port $PORT --server.headless true`. You'll also need to set the `ENDPOINT` environment variable for this frontend service to point to your deployed backend URL.
+-   Use [Streamlit Community Cloud](https://streamlit.io/cloud) for deploying the frontend, which is often simpler for Streamlit apps.
+-   Adapt the `start.sh` script and potentially use a process manager like `supervisor` if you intend to run both backend and frontend from the same service instance (more complex).
 
 ### 6. Deploy
 
