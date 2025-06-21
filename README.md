@@ -1,6 +1,6 @@
-# [Project Logo Placeholder] PDF Assistant Chatbot
+# Event Bot
 
-A PDF document assistant with a Flask-based backend and a Streamlit-based frontend. The backend integrates with Google Gemini AI and Pinecone vector database, allowing users to upload PDF files and ask questions about their content using natural language via the frontend interface.
+A PDF document assistant with a Flask-based backend and a Streamlit-based frontend. The backend integrates with Google Gemini AI and Pinecone vector database, allowing users to upload PDF files and ask questions about their content using natural language via the frontend interface. App Link(https://eventbot-pinecone-db.streamlit.app/)
 
 ## 📖 Table of Contents
 
