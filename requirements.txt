@@ -21,10 +21,11 @@ requests
 # Development (optional)
 gunicorn
 
+# Table Extractions
 pdfplumber    # table detection
 pandas
 sqlalchemy
 pydantic      # validate LLM JSON
-fastapi       # for the future API switch
 uvicorn
+fastapi
 
