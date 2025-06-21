@@ -1,7 +1,7 @@
 # my-repo/app.py (Updated Entry Point)
 
 import os
-from src.chatbot_backend import create_app, logger # Import logger from the __init__ for consistency
+from src.backend import create_app, logger # Import logger from the __init__ for consistency
 
 app = create_app()
 

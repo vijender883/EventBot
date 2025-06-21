@@ -71,7 +71,7 @@ For comprehensive instructions, including API key setup, environment configurati
 
 ## 📡 API Endpoints
 
-The API routes are primarily defined in `src/chatbot_backend/routes/chat.py`. The root `/` endpoint is in `app.py`.
+The API routes are primarily defined in `src/backend/routes/chat.py`. The root `/` endpoint is in `app.py`.
 
 | Endpoint     | Method | Description                                          | Request Body (Format)         | Success Response (JSON Example)                                                                                                |
 |--------------|--------|------------------------------------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
@@ -98,7 +98,7 @@ Chatbot_Pinecone_flask_backend/
 ├── requirements.txt       # Python package dependencies
 ├── start.sh               # Shell script for starting the application via Gunicorn
 ├── src/                   # Main source code directory
-│   └── chatbot_backend/   # Primary package for the chatbot
+│   └── backend/   # Primary package for the chatbot
 │       ├── __init__.py
 │       ├── core/          # Core logic (AI, PDF processing)
 │       │   ├── __init__.py
@@ -122,11 +122,11 @@ Chatbot_Pinecone_flask_backend/
 ### Key Components
 
 -   **`app.py`**: Initializes the Flask app, registers blueprints, and defines the root (`/`) endpoint.
--   **`src/chatbot_backend/routes/chat.py`**: Contains the Flask Blueprint (`chat_bp`) for core API endpoints: `/health`, `/uploadpdf`, and `/answer`.
--   **`src/chatbot_backend/core/event_bot.py`**: Houses the `EventBot` class, which orchestrates PDF processing (text extraction, chunking), vector embedding generation via Gemini, and question answering using the Pinecone index.
--   **`src/chatbot_backend/services/gemini_service.py`**: Provides a dedicated interface for communicating with the Google Gemini API (generating embeddings, conversational responses).
--   **`src/chatbot_backend/services/pinecone_service.py`**: Manages all interactions with Pinecone, including creating/accessing the index, and storing/querying document vectors.
--   **`src/chatbot_backend/utils/config_loader.py`**: Responsible for loading and providing access to configuration settings (API keys, Pinecone details) from environment variables.
+-   **`src/backend/routes/chat.py`**: Contains the Flask Blueprint (`chat_bp`) for core API endpoints: `/health`, `/uploadpdf`, and `/answer`.
+-   **`src/backend/core/event_bot.py`**: Houses the `EventBot` class, which orchestrates PDF processing (text extraction, chunking), vector embedding generation via Gemini, and question answering using the Pinecone index.
+-   **`src/backend/services/gemini_service.py`**: Provides a dedicated interface for communicating with the Google Gemini API (generating embeddings, conversational responses).
+-   **`src/backend/services/pinecone_service.py`**: Manages all interactions with Pinecone, including creating/accessing the index, and storing/querying document vectors.
+-   **`src/backend/utils/config_loader.py`**: Responsible for loading and providing access to configuration settings (API keys, Pinecone details) from environment variables.
 
 ## 🧪 Running Tests
 

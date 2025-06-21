@@ -8,30 +8,30 @@ The architecture emphasizes modularity, separating concerns into distinct compon
 
 ## 2. Core Components
 
-The application is structured into several key components, primarily residing within the `src/chatbot_backend` package:
+The application is structured into several key components, primarily residing within the `src/backend` package:
 
-### 2.1. Flask Application (`app.py`, `src/chatbot_backend/__init__.py`)
+### 2.1. Flask Application (`app.py`, `src/backend/__init__.py`)
 
--   **`app.py`**: This is the main executable script that starts the Flask development server. It imports the `create_app` application factory from the `chatbot_backend` package.
--   **`src/chatbot_backend/__init__.py`**: This package initializer is crucial for the application setup. It contains the `create_app()` factory function which:
+-   **`app.py`**: This is the main executable script that starts the Flask development server. It imports the `create_app` application factory from the `backend` package.
+-   **`src/backend/__init__.py`**: This package initializer is crucial for the application setup. It contains the `create_app()` factory function which:
     -   Creates an instance of the Flask application.
-    -   Loads application configurations from `src.chatbot_backend.config.Config`.
-    -   Initializes the `ChatbotAgent` (which is an instance of `RAGAgent` from `src.chatbot_backend.agents.rag_agent.py`).
-    -   Initializes the `Orchestrator` (from `src.chatbot_backend.services.orchestrator.py`) by injecting the `ChatbotAgent` instance.
+    -   Loads application configurations from `src.backend.config.Config`.
+    -   Initializes the `ChatbotAgent` (which is an instance of `RAGAgent` from `src.backend.agents.rag_agent.py`).
+    -   Initializes the `Orchestrator` (from `src.backend.services.orchestrator.py`) by injecting the `ChatbotAgent` instance.
     -   Makes the `Orchestrator` instance globally accessible within the Flask application context (typically as `current_app.chatbot_agent` or a similar attribute) for use by the route handlers.
-    -   Registers API Blueprints, such as `chat_bp` (defined in `src.chatbot_backend.routes.chat.py`), to organize routes.
+    -   Registers API Blueprints, such as `chat_bp` (defined in `src.backend.routes.chat.py`), to organize routes.
     -   Configures application-level logging.
 
-### 2.2. Routing (`src/chatbot_backend/routes/chat.py`)
+### 2.2. Routing (`src/backend/routes/chat.py`)
 
 -   API endpoints are modularized using Flask Blueprints. The primary blueprint for chatbot functionalities is `chat_bp`.
 -   This module is responsible for defining routes (e.g., `/`, `/health`, `/uploadpdf`, `/answer`) and mapping them to specific controller functions.
 -   Controller functions handle incoming HTTP requests, perform initial validation (like checking for required parameters or file types), and then delegate the core processing logic to the `Orchestrator` service.
 -   They also format the responses received from the service layer into JSON and set appropriate HTTP status codes before sending them back to the client.
 
-### 2.3. Agent (`src/chatbot_backend/agents/rag_agent.py`)
+### 2.3. Agent (`src/backend/agents/rag_agent.py`)
 
--   The `RAGAgent` class (referred to as `ChatbotAgent` in `__init__.py` after instantiation) is the heart of the chatbot's intelligence and processing capabilities. It extends `BaseChatbotAgent` (from `src/chatbot_backend/agents/base.py`).
+-   The `RAGAgent` class (referred to as `ChatbotAgent` in `__init__.py` after instantiation) is the heart of the chatbot's intelligence and processing capabilities. It extends `BaseChatbotAgent` (from `src/backend/agents/base.py`).
 -   **Key Responsibilities**:
     -   **Initialization**:
         -   Establishes connections with external services: Google Gemini (for both Large Language Model capabilities and text embeddings) and Pinecone (for the vector database).
@@ -52,7 +52,7 @@ The application is structured into several key components, primarily residing wi
         -   Sends the prompt to the LLM and receives the generated natural language answer.
     -   **Health Checks (`health_check` method)**: Provides functionality to verify the operational status of its dependencies (Gemini API, Pinecone connection, embedding model, and vector store).
 
-### 2.4. Services (`src/chatbot_backend/services/orchestrator.py`)
+### 2.4. Services (`src/backend/services/orchestrator.py`)
 
 -   The `Orchestrator` class serves as an abstraction layer between the API routes (HTTP request handlers) and the complex core logic within the `RAGAgent`.
 -   **Primary Role**:
@@ -63,7 +63,7 @@ The application is structured into several key components, primarily residing wi
     -   Decouples route logic from the agent's internal implementation, making the system easier to maintain and modify.
     -   Provides a clear point for future enhancements, such as managing multiple types of agents, implementing more sophisticated request routing logic (e.g., based on query intent), or orchestrating multi-step workflows.
 
-### 2.5. Configuration (`src/chatbot_backend/config.py`)
+### 2.5. Configuration (`src/backend/config.py`)
 
 -   The `Config` class is the central point for managing all application settings and configurations.
 -   **Key Functions**:
@@ -72,7 +72,7 @@ The application is structured into several key components, primarily residing wi
     -   Stores both Flask-specific settings (e.g., `FLASK_ENV`, `DEBUG`, `PORT`) and application-specific parameters (e.g., `GEMINI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX_NAME`, `MAX_FILE_SIZE`, `ALLOWED_EXTENSIONS`).
     -   Includes a `validate_required_env_vars()` static method, which is proactively called during the `RAGAgent` initialization to ensure that all critical external service credentials are provided, preventing runtime failures due to missing configuration.
 
-### 2.6. Utilities (`src/chatbot_backend/utils/helper.py`)
+### 2.6. Utilities (`src/backend/utils/helper.py`)
 
 -   This module is designated for common, reusable utility functions that might be needed across various parts of the application.
 -   Examples could include specialized text processing functions, date/time helpers, or other miscellaneous logic that doesn't fit neatly into other components. (The specific content of `helper.py` was not part of this architectural review).
@@ -89,7 +89,7 @@ Chatbot_Pinecone_flask_backend/
 ├── requirements.txt       # Python package dependencies
 ├── start.sh               # Shell script for starting Gunicorn (production deployment)
 ├── src/                   # Main source code directory
-│   └── chatbot_backend/   # The core Python package for the chatbot application
+│   └── backend/   # The core Python package for the chatbot application
 │       ├── __init__.py    # Package initializer (contains create_app factory)
 │       ├── agents/        # Houses different agent implementations
 │       │   ├── base.py       # Defines a base class for agents

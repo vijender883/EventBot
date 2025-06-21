@@ -1,4 +1,4 @@
-# src/chatbot_backend/utils/helper.py
+# src/backend/utils/helper.py
 
 import logging
 from flask import jsonify, request, current_app # current_app for accessing app.config
