@@ -2,19 +2,21 @@
 
 import os
 import logging
+import dotenv
 
+dotenv.load_dotenv()
 logger = logging.getLogger(__name__)
 
 class Config:
     """
-    Configuration class for the Flask application.
+    Configuration class for the application.
 
     Loads environment variables and defines application-wide settings.
     """
     MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
     ALLOWED_EXTENSIONS = {'pdf'}
-    UPLOAD_FOLDER = 'uploads' # This should typically be outside the source code, e.g., in a data directory or cloud storage.
-    
+    UPLOAD_FOLDER = 'uploads' 
+
     # Ensure upload directory exists
     try:
         os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -22,18 +24,18 @@ class Config:
     except OSError as e:
         logger.error(f"Error creating upload folder '{UPLOAD_FOLDER}': {e}")
 
-    # EventBot (now ChatbotAgent) related configurations
-    # These are directly used by the ChatbotAgent, but defined here for centralized config
+    #ChatbotAgent configs
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    # print(f"GEMINI_API_KEY: {GEMINI_API_KEY}")
     PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
     PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX")
     PINECONE_CLOUD = os.getenv("PINECONE_CLOUD", "aws")
     PINECONE_REGION = os.getenv("PINECONE_REGION", "us-east-1")
 
-    # Flask specific configs
-    FLASK_ENV = os.getenv('FLASK_ENV', 'development')
-    DEBUG = FLASK_ENV == 'development'
+    #server settings
+    HOST = os.getenv('HOST', '0.0.0.0')
     PORT = int(os.getenv('PORT', 5000))
+    DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
 
     @staticmethod
     def validate_required_env_vars():

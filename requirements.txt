@@ -26,3 +26,14 @@ requests
 
 # Development (optional)
 gunicorn
+
+# FastAPI Dependencies
+fastapi
+uvicorn[standard]
+pydantic
+starlette
+python-multipart
+
+# Add any other specific dependencies your project needs, e.g., for data processing
+# numpy
+# pandas
