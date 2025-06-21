@@ -11,8 +11,8 @@ venv:
 	@echo "Virtual environment 'venv' created. Activate with: source venv/bin/activate (Linux/macOS) or venv\\Scripts\\activate (Windows)"
 
 venv3:
-	python3 -m venv venv3
-	@echo "Virtual environment 'venv3' created using python3. Activate with: source venv3/bin/activate (Linux/macOS) or venv3\\Scripts\\activate (Windows)"
+	python3 -m venv venv
+	@echo "Virtual environment 'venv' created using python3. Activate with: source venv3/bin/activate (Linux/macOS) or venv3\\Scripts\\activate (Windows)"
 
 # Install dependencies for the main application
 install:
@@ -70,3 +70,8 @@ run-all:
 	@APP_ENV=development uvicorn app:app --reload --host 0.0.0.0 --port $${PORT:-8000} & BE_PID=$$!; \
 	streamlit run ./src/frontend/streamlit_app.py & FE_PID=$$!; \
 	wait $BE_PID; wait $FE_PID
+
+commit:
+	git pull origin dev
+	git add .
+	git commit -m "some changes"
