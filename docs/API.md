@@ -11,7 +11,7 @@ This document provides detailed specifications for the available API endpoints, 
 ## Common Information
 
 -   **Base URL**:
-    -   Local Development: `http://localhost:5000` (or the port specified in your `.env` file)
+    -   Local Development: `http://localhost:8000` (FastAPI default, can be configured via `.env` `PORT`, e.g., to `5000`)
     -   Production: This will be the URL provided by your deployment platform (e.g., `https://your-service-name.onrender.com`).
 -   **Authentication**: The API does not currently implement explicit user-facing authentication. Security for external services (Google Gemini, Pinecone) is managed server-side via environment variables.
 -   **Content Type**: For `POST` requests with a JSON body, `Content-Type: application/json` is required. For file uploads, `multipart/form-data` is used.
@@ -42,7 +42,7 @@ This document provides detailed specifications for the available API endpoints, 
           }
         }
         ```
--   **Error Response**: Generally not applicable if the server is operational. In case of a severe server misconfiguration, a standard Flask error page or a generic server error might be returned.
+-   **Error Response**: Generally not applicable if the server is operational. In case of a severe server misconfiguration, a standard FastAPI JSON error response or a generic server error might be returned.
     -   **Status Code**: `500 Internal Server Error`
     -   **Body (Conceptual Example for unexpected error)**:
         ```json
@@ -51,7 +51,7 @@ This document provides detailed specifications for the available API endpoints, 
             "message": "The server encountered an unexpected condition."
         }
         ```
-    *Note: `app.py` itself might define a very basic `GET /` route. However, if the `chat_bp` (from `routes/chat.py`) is registered at the application root, its more informative `/` route (documented here) will typically take precedence.*
+    *Note: `app.py` (or `main.py`) itself might define a very basic `GET /` route. However, if the APIRouter from `routes/chat.py` is included in the main app at the root, its more informative `/` route (documented here) will typically take precedence.*
 
 ---
 
