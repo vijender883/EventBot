@@ -4,7 +4,7 @@ import json
 import os
 import tempfile
 from unittest.mock import patch, MagicMock
-from src.chatbot_backend import create_app
+from src.backend import create_app
 
 # Assuming your conftest.py defines 'app_client' fixture
 
@@ -54,7 +54,7 @@ def test_health_check_failure(app_client):
 
 def test_health_check_agent_not_initialized(mocker):
     """Test /health when ChatbotAgent fails to initialize during app creation."""
-    mocker.patch('src.chatbot_backend.__init__.ChatbotAgent', side_effect=Exception("Init error"))
+    mocker.patch('src.backend.__init__.ChatbotAgent', side_effect=Exception("Init error"))
     app = create_app()
     app.config['TESTING'] = True
     with app.test_client() as client:
@@ -172,7 +172,7 @@ def test_upload_pdf_too_large(mocker, app_client):
     """Test /uploadpdf with a file exceeding the maximum size."""
     client, _ = app_client
     # Patch MAX_FILE_SIZE for this test to a small value
-    mocker.patch('src.chatbot_backend.config.Config.MAX_FILE_SIZE', 100) # 100 bytes
+    mocker.patch('src.backend.config.Config.MAX_FILE_SIZE', 100) # 100 bytes
 
     # Create a dummy file larger than 100 bytes
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:

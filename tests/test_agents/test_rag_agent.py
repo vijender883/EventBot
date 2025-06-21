@@ -5,8 +5,8 @@ import os
 from unittest.mock import MagicMock, patch, mock_open
 
 # Import the ChatbotAgent and Config directly for testing
-from src.chatbot_backend.agents.rag_agent import ChatbotAgent
-from src.chatbot_backend.config import Config
+from src.backend.agents.rag_agent import ChatbotAgent
+from src.backend.config import Config
 
 # The 'mock_chatbot_agent_instance' fixture from conftest.py will mock external dependencies
 # and provide a ChatbotAgent instance ready for testing its methods.
@@ -19,7 +19,7 @@ def test_chatbot_agent_initialization_success(mocker):
     mocker.patch('google.generativeai.GenerativeModel')
     mocker.patch('langchain_google_genai.GoogleGenerativeAIEmbeddings')
     mocker.patch('langchain_pinecone.PineconeVectorStore')
-    mocker.patch('src.chatbot_backend.config.Config.validate_required_env_vars') # Mock this too
+    mocker.patch('src.backend.config.Config.validate_required_env_vars') # Mock this too
 
     # Temporarily set dummy env vars for initialization
     os.environ['GEMINI_API_KEY'] = 'dummy_gemini'
@@ -50,7 +50,7 @@ def test_chatbot_agent_initialization_missing_env_vars(mocker):
     # We need to explicitly re-patch validate_required_env_vars if it's already been loaded.
     # For a clean test, it's better if this test runs before other modules requiring it.
     # Or, you can patch the specific methods within _validate_credentials if it uses them.
-    mocker.patch('src.chatbot_backend.agents.rag_agent.Config.validate_required_env_vars', 
+    mocker.patch('src.backend.agents.rag_agent.Config.validate_required_env_vars',
                  side_effect=ValueError("Missing required environment variables"))
 
     with pytest.raises(ValueError, match="Missing required environment variables"):

@@ -1,4 +1,4 @@
-# src/chatbot_backend/agents/base.py
+# src/backend/agents/base.py
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any

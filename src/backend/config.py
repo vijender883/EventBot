@@ -1,4 +1,4 @@
-# src/chatbot_backend/config.py
+# src/backend/config.py
 
 import os
 import logging
