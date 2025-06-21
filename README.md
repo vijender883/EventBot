@@ -1,6 +1,6 @@
 # Event Bot
 
-A PDF document assistant with a Flask-based backend and a Streamlit-based frontend. The backend integrates with Google Gemini AI and Pinecone vector database, allowing users to upload PDF files and ask questions about their content using natural language via the frontend interface. Event bot(https://eventbot-pinecone-db.streamlit.app/)
+A PDF document assistant with a FastAPI-based backend and a Streamlit-based frontend. The backend integrates with Google Gemini AI and Pinecone vector database, allowing users to upload PDF files and ask questions about their content using natural language via the frontend interface. Event bot(https://eventbot-pinecone-db.streamlit.app/)
 
 ## 📖 Table of Contents
 
@@ -75,12 +75,12 @@ For comprehensive instructions, including API key setup, environment configurati
 
 ### Running the Backend
 
-To run the Flask backend server:
+To run the FastAPI backend server:
 ```bash
 make run-backend
-# Alternatively: python app.py
+# Alternatively: uvicorn app:app --reload (or similar command based on your app structure)
 ```
-The backend will typically start on `http://localhost:5000`.
+The backend will typically start on `http://localhost:8000` (FastAPI's default) or `http://localhost:5000` if configured.
 
 ### Running the Frontend
 
@@ -119,12 +119,12 @@ Chatbot_Pinecone_flask_backend/
 ├── .gitignore             # Specifies intentionally untracked files for Git
 ├── README.md              # This guide
 ├── Makefile               # Defines common tasks like running, testing, linting
-├── app.py                 # Main Flask application entry point for the backend
+├── app.py                 # Main FastAPI application entry point for the backend (often named main.py or app.py)
 ├── requirements.txt       # Python package dependencies for both backend and frontend
 ├── requirements-dev.txt   # Development-specific dependencies (testing, linting)
-├── start.sh               # Shell script for starting the backend application via Gunicorn
+├── start.sh               # Shell script for starting the backend application (e.g., via Uvicorn with Gunicorn workers)
 ├── src/                   # Main source code directory
-│   ├── backend/           # Source code for the Flask backend
+│   ├── backend/           # Source code for the FastAPI backend
 │   │   ├── __init__.py
 │   │   ├── agents/
 │   │   │   ├── base.py
@@ -148,8 +148,8 @@ Chatbot_Pinecone_flask_backend/
 ### Key Components
 
 **Backend:**
--   **`app.py`**: Initializes the Flask app, registers blueprints, and defines the root (`/`) endpoint for the backend.
--   **`src/backend/routes/chat.py`**: Contains the Flask Blueprint (`chat_bp`) for core API endpoints: `/health`, `/uploadpdf`, and `/answer`.
+-   **`app.py`**: Initializes the FastAPI app, includes routers, and defines the root (`/`) endpoint for the backend. (Filename might be `main.py`)
+-   **`src/backend/routes/chat.py`**: Contains the FastAPI APIRouter for core API endpoints: `/health`, `/uploadpdf`, and `/answer`.
 -   **`src/backend/agents/rag_agent.py`**: Implements the core RAG (Retrieval Augmented Generation) logic, including PDF processing, vector embedding, and question answering using Gemini and Pinecone.
 -   **`src/backend/services/orchestrator.py`**: Acts as a layer between API routes and the `RAGAgent`.
 -   **`src/backend/config.py`**: Manages application configuration, loading settings from environment variables.
@@ -167,8 +167,8 @@ The application uses environment variables for configuration. These are typicall
 -   `PINECONE_INDEX_NAME`: The name of your Pinecone index.
 -   `PINECONE_CLOUD`: The cloud provider for your Pinecone index (e.g., `aws`).
 -   `PINECONE_REGION`: The region of your Pinecone index (e.g., `us-east-1`).
--   `FLASK_ENV`: Set to `development` or `production`.
--   `PORT`: Port for the backend server (defaults to `5000`).
+-   `APP_ENV`: Set to `development` or `production`. This variable typically controls debug mode and other environment-specific settings. (Formerly `FLASK_ENV`)
+-   `PORT`: Port for the backend server (defaults to `8000` for Uvicorn/FastAPI, but can be `5000` if configured).
 
 **Frontend Variables:**
 -   `ENDPOINT`: The URL of the backend API. For local development, this would typically be `http://localhost:5000`.
@@ -194,9 +194,9 @@ For troubleshooting common installation and setup issues, refer to the [Detailed
 ### Debug Mode (Local Development)
 
 For more verbose error output locally:
-1.  Set `FLASK_ENV=development` in your `.env` file.
+1.  Set `APP_ENV=development` in your `.env` file. This often enables FastAPI's debug mode.
 2.  Optionally, set `LOG_LEVEL=DEBUG` in `.env` for more detailed application logs.
-3.  Run the app: `python app.py`.
+3.  Run the app (e.g., `uvicorn app:app --reload`).
 
 ## 📊 Monitoring
 
@@ -222,8 +222,19 @@ Key information to look for in logs:
     *   `werkzeug.utils.secure_filename` is used to sanitize filenames.
     *   File type and size are validated as per `ALLOWED_EXTENSIONS` and `MAX_FILE_SIZE` in the app configuration.
 -   **Input Validation**: Basic validation for presence of query in `/answer` and file in `/uploadpdf`. Sensitive inputs should always be validated and sanitized.
--   **CORS**: `Flask-CORS` is initialized with `CORS(app)`, allowing all origins by default. For production, restrict this to your frontend's domain: `CORS(app, resources={r"/api/*": {"origins": "https://your.frontend.domain.com"}})` in `app.py`.
--   **Error Handling**: Endpoints use try-except blocks to return structured JSON error responses, avoiding exposure of raw stack traces.
+-   **CORS**: FastAPI handles CORS through `CORSMiddleware`. Ensure it's configured securely, especially in production, by specifying allowed origins, methods, and headers. For example:
+    ```python
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["https://your.frontend.domain.com"], # Or ["*"] for development
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    ```
+-   **Error Handling**: FastAPI has built-in support for returning structured JSON error responses (e.g., using `HTTPException`) and allows for custom exception handlers. This helps avoid exposing raw stack traces.
 -   **Dependency Management**: Keep `requirements.txt` up-to-date. Regularly audit dependencies for vulnerabilities using tools like `pip-audit` or GitHub's Dependabot.
 -   **HTTPS**: Render automatically provides HTTPS for deployed services.
 

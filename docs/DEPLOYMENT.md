@@ -1,24 +1,24 @@
 # Deployment Guide
 
-This document provides guidance on deploying the PDF Assistant Chatbot application, which consists of a Flask backend and a Streamlit frontend.
+This document provides guidance on deploying the PDF Assistant Chatbot application, which consists of a FastAPI backend and a Streamlit frontend.
 
-## Backend Deployment (Flask Application)
+## Backend Deployment (FastAPI Application)
 
-The Flask backend is designed to be deployed as a standard Python web application.
+The FastAPI backend is designed to be deployed as a standard Python ASGI application.
 
 ### Recommended Platform: Render.com
 
-We provide detailed instructions for deploying the Flask backend to [Render.com](https://render.com) in the [Detailed Installation and Setup Guide](INSTALLATION.md#🌐-deploy-to-rendercom). This guide covers:
+We provide detailed instructions for deploying the FastAPI backend to [Render.com](https://render.com) in the [Detailed Installation and Setup Guide](INSTALLATION.md#🌐-deploy-to-rendercom). This guide covers:
 - Preparing your repository.
 - Creating a Web Service on Render.
-- Configuring build and start commands (using `gunicorn` via `start.sh`).
+- Configuring build and start commands (e.g., using Uvicorn with Gunicorn workers via `start.sh`).
 - Setting necessary environment variables for API keys and application settings.
 
 ### General Backend Deployment Considerations
 
 If deploying to other platforms (e.g., AWS, Google Cloud, Heroku, self-hosted), consider the following:
--   **WSGI Server**: Use a production-grade WSGI server like Gunicorn (as configured in `start.sh`) or uWSGI. Do not use Flask's built-in development server in production.
--   **Environment Variables**: Ensure all required environment variables (API keys, database URLs, `FLASK_ENV=production`, etc.) are securely configured on your deployment platform. Refer to `.env.template` for a full list.
+-   **ASGI Server**: Use a production-grade ASGI server like Uvicorn, potentially managed by Gunicorn for multiple worker processes. Do not use Uvicorn's development server (`--reload`) in production directly without a process manager.
+-   **Environment Variables**: Ensure all required environment variables (API keys, database URLs, `APP_ENV=production`, etc.) are securely configured on your deployment platform. Refer to `.env.template` for a full list.
 -   **Dependencies**: Install dependencies from `requirements.txt`.
 -   **Database/Service Accessibility**: Ensure the deployed backend can reach external services like Google Gemini and Pinecone (check network rules, firewalls).
 -   **HTTPS**: Configure HTTPS for secure communication. Most PaaS providers handle this automatically.
@@ -31,7 +31,7 @@ The Streamlit frontend (`src/frontend/streamlit_app.py`) needs to be deployed as
 
 ### Key Requirement: `ENDPOINT` Environment Variable
 
-The Streamlit application **must** have the `ENDPOINT` environment variable set to the URL of your deployed Flask backend API.
+The Streamlit application **must** have the `ENDPOINT` environment variable set to the URL of your deployed FastAPI backend API.
 For example, if your backend is deployed to `https://my-pdf-backend.onrender.com`, then the Streamlit application needs `ENDPOINT=https://my-pdf-backend.onrender.com`.
 
 ### Deployment Options for Streamlit
