@@ -5,6 +5,10 @@
 ### 1. Clone the Repository
 
 ```bash
+# Make sure to clone the correct repository if the name changed, e.g.:
+# git clone https://github.com/vijender883/Chatbot_Pinecone_FastAPI_backend
+# cd Chatbot_Pinecone_FastAPI_backend
+# For now, assuming the name is the same as the issue was raised on this repo:
 git clone https://github.com/vijender883/Chatbot_Pinecone_flask_backend
 cd Chatbot_Pinecone_flask_backend
 ```
@@ -79,9 +83,9 @@ copy .env.template .env
 Open the `.env` file with a text editor and fill in your actual API keys and Pinecone details:
 
 ```env
-# Flask Configuration
-FLASK_ENV=development # Set to 'production' when deploying
-PORT=5000             # Port the local server will run on
+# Backend Configuration (FastAPI)
+APP_ENV=development # Set to 'production' when deploying (e.g., for Uvicorn settings)
+PORT=8000           # Default port for FastAPI/Uvicorn, can be changed (e.g., to 5000)
 
 # API Keys (Replace with your actual keys)
 GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
@@ -96,12 +100,12 @@ PINECONE_REGION="us-east-1"                  # Your Pinecone index region (e.g.,
 LOG_LEVEL=INFO # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 # Frontend Configuration
-ENDPOINT="http://localhost:5000" # URL for the backend API
+ENDPOINT="http://localhost:8000" # URL for the backend API (default for FastAPI)
 ```
 **Important**:
 - Replace placeholder values with your actual credentials and configuration details.
 - Ensure `PINECONE_INDEX_NAME`, `PINECONE_CLOUD`, and `PINECONE_REGION` in `.env` precisely match your Pinecone index settings.
-- The `ENDPOINT` variable is used by the Streamlit frontend to connect to the backend API. The default `http://localhost:5000` assumes the backend is running locally on port 5000. Adjust if your backend is hosted elsewhere or on a different port.
+- The `ENDPOINT` variable is used by the Streamlit frontend to connect to the backend API. The default `http://localhost:8000` assumes the backend is running locally on FastAPI's default port. Adjust if your backend is configured for a different port (e.g., 5000).
 - The `.env` file is included in `.gitignore` and should not be committed to version control.
 
 ### 3. Verify Configuration
@@ -117,11 +121,11 @@ To check if the frontend `ENDPOINT` variable is loaded:
 ```bash
 python -c "from dotenv import load_dotenv; import os; load_dotenv(); print(f\"Endpoint: {os.getenv('ENDPOINT')}\")"
 ```
-This should display the endpoint URL, e.g., `Endpoint: http://localhost:5000`.
+This should display the endpoint URL, e.g., `Endpoint: http://localhost:8000`.
 
 ## 🚀 Running Locally
 
-The application consists of two main parts: the Flask backend and the Streamlit frontend. Both need to be running to use the application. You can use the `Makefile` for convenience.
+The application consists of two main parts: the FastAPI backend and the Streamlit frontend. Both need to be running to use the application. You can use the `Makefile` for convenience.
 
 ### 1. Start the Backend Server
 
@@ -131,17 +135,18 @@ Using Makefile:
 ```bash
 make run-backend
 ```
-Alternatively, run directly:
+Alternatively, run directly with Uvicorn (assuming your FastAPI app instance is named `app` in `app.py`):
 ```bash
-python app.py
+uvicorn app:app --reload --port ${PORT:-8000}
+# The ${PORT:-8000} will use the PORT from .env or default to 8000
 ```
-The backend server will typically start on `http://localhost:5000` (or the `PORT` specified in `.env`).
+The backend server will typically start on `http://localhost:8000` (or the `PORT` specified in `.env`).
 
 ### 2. Start the Frontend Application
 
 Once the backend server is running:
 
-1.  **Ensure `ENDPOINT` is set**: The Streamlit frontend needs the `ENDPOINT` environment variable to point to your running backend. If you followed the `.env` configuration step and your backend is at `http://localhost:5000`, this should be correctly set.
+1.  **Ensure `ENDPOINT` is set**: The Streamlit frontend needs the `ENDPOINT` environment variable to point to your running backend. If you followed the `.env` configuration step and your backend is at `http://localhost:8000` (or your configured `PORT`), this should be correctly set.
 2.  **Run the frontend**:
 
     Using Makefile:
@@ -160,7 +165,8 @@ Use `curl` or an API client like Postman to interact with the endpoints.
 
 #### Health Check (`/health`)
 ```bash
-curl http://localhost:5000/health
+curl http://localhost:${PORT:-8000}/health
+# Replace ${PORT:-8000} with 5000 if you set PORT=5000 in .env
 ```
 Expected successful output:
 ```json
@@ -180,7 +186,8 @@ Expected successful output:
 #### Upload a PDF (`/uploadpdf`)
 Replace `path/to/your_document.pdf` with an actual PDF file path.
 ```bash
-curl -X POST -F "file=@path/to/your_document.pdf" http://localhost:5000/uploadpdf
+curl -X POST -F "file=@path/to/your_document.pdf" http://localhost:${PORT:-8000}/uploadpdf
+# Replace ${PORT:-8000} with 5000 if you set PORT=5000 in .env
 ```
 Expected successful output:
 ```json
@@ -197,7 +204,8 @@ Ensure a PDF has been successfully uploaded and processed first.
 curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"query": "What is the main subject of this document?"}' \
-  http://localhost:5000/answer
+  http://localhost:${PORT:-8000}/answer
+# Replace ${PORT:-8000} with 5000 if you set PORT=5000 in .env
 ```
 Expected output (will vary based on the PDF content and query):
 ```json
@@ -208,7 +216,7 @@ Expected output (will vary based on the PDF content and query):
 
 ## 🌐 Deploy to Render.com
 
-Render.com offers a convenient platform for deploying this Flask application.
+Render.com offers a convenient platform for deploying this FastAPI application.
 
 ### 1. Prepare for Deployment
 
@@ -242,18 +250,21 @@ Render.com offers a convenient platform for deploying this Flask application.
 -   **Branch**: `main` (or your primary deployment branch).
 -   **Runtime**: `Python 3`. Render should auto-detect this.
 -   **Build Command**: `pip install -r requirements.txt`. This is usually auto-detected.
--   **Start Command**: `./start.sh`. This script uses Gunicorn to run the Flask app.
-    *Contents of `start.sh`:*
+-   **Start Command**: `./start.sh`. This script uses Gunicorn with Uvicorn workers to run the FastAPI app.
+    *Example contents of `start.sh` for FastAPI:*
     ```bash
     #!/bin/bash
     set -e # Exit immediately if a command exits with a non-zero status
-    export FLASK_ENV=production # Ensure Flask runs in production mode
-    # Gunicorn command:
+    export APP_ENV=production # Ensure app runs in production mode
+    # Gunicorn command with Uvicorn workers:
     # --bind 0.0.0.0:$PORT : Bind to all network interfaces on the port Render provides
-    # --workers 2 : Adjust based on your Render plan's resources
+    # --workers <num_workers> : Adjust based on your Render plan's resources (e.g., 2 or (2*CPU_CORES)+1)
+    # --worker-class uvicorn.workers.UvicornWorker : Use Uvicorn workers for ASGI
     # --timeout 120 : Increase if PDF processing takes longer; be mindful of Render's limits
-    # app:app : Points to the Flask app instance in app.py
-    gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app:app
+    # app.main:app : Points to the FastAPI app instance (e.g., `app` in `app/main.py` or `app.py`)
+    # Make sure your main FastAPI application file is app.py and the instance is `app`, or adjust app.main:app
+    gunicorn --bind 0.0.0.0:$PORT --workers ${WORKERS:-2} --worker-class uvicorn.workers.UvicornWorker --timeout 120 app:app
+    # Consider making WORKERS an environment variable.
     ```
 
 ### 5. Set Environment Variables
@@ -265,11 +276,13 @@ In your Render service's dashboard, navigate to the "Environment" section. Add t
 -   `PINECONE_INDEX_NAME`: `Your_Pinecone_index_name`
 -   `PINECONE_CLOUD`: `Your_Pinecone_cloud_provider` (e.g., `aws`)
 -   `PINECONE_REGION`: `Your_Pinecone_region` (e.g., `us-east-1`)
--   `FLASK_ENV`: `production` (Reinforces the setting in `start.sh`)
+-   `APP_ENV`: `production` (Reinforces the setting in `start.sh`)
+-   `PORT`: Render will set this, but your `start.sh` uses it.
+-   `WORKERS`: (Optional, if you made it configurable in `start.sh`, e.g., `2` or `4`)
 -   `PYTHON_VERSION`: Optionally specify your Python version (e.g., `3.10.0`) if needed.
 
-**Note on Frontend Deployment**: The above Render.com instructions are for deploying the Flask backend. Deploying the Streamlit frontend typically requires a separate service or a different setup. You might:
--   Deploy it as a separate Web Service on Render, configuring its start command as `streamlit run src/frontend/streamlit_app.py --server.port $PORT --server.headless true`. You'll also need to set the `ENDPOINT` environment variable for this frontend service to point to your deployed backend URL.
+**Note on Frontend Deployment**: The above Render.com instructions are for deploying the FastAPI backend. Deploying the Streamlit frontend typically requires a separate service or a different setup. You might:
+-   Deploy it as a separate Web Service on Render, configuring its start command as `streamlit run src/frontend/streamlit_app.py --server.port $PORT --server.headless true`. You'll also need to set the `ENDPOINT` environment variable for this frontend service to point to your deployed backend URL (e.g., `https://your-fastapi-backend.onrender.com`).
 -   Use [Streamlit Community Cloud](https://streamlit.io/cloud) for deploying the frontend, which is often simpler for Streamlit apps.
 -   Adapt the `start.sh` script and potentially use a process manager like `supervisor` if you intend to run both backend and frontend from the same service instance (more complex).
 
@@ -323,11 +336,11 @@ This project should include automated tests to ensure reliability. Assuming `pyt
 
 4.  **PDF Processing Fails (`/uploadpdf` errors)**:
     *   **File Validity**: Ensure the PDF is not corrupted.
-    *   **Console Logs**: Check logs from `python app.py` for detailed error messages.
-    *   **File Size/Type**: The application has checks for file size (`MAX_FILE_SIZE`) and type (`ALLOWED_EXTENSIONS`) defined in `app.py` and validated in `chat.py`.
+    *   **Console Logs**: Check logs from your Uvicorn/Gunicorn process for detailed error messages.
+    *   **File Size/Type**: The application has checks for file size (`MAX_FILE_SIZE`) and type (`ALLOWED_EXTENSIONS`) defined in the configuration and validated in `routes/chat.py` (likely using FastAPI's `UploadFile` attributes).
 
-5.  **`gunicorn` command not found (Render Deployment)**:
-    *   Ensure `gunicorn` is in `requirements.txt`. If not, add it (`pip install gunicorn`, then `pip freeze > requirements.txt`) and redeploy.
+5.  **`gunicorn` or `uvicorn` command not found (Render Deployment)**:
+    *   Ensure `gunicorn` and `uvicorn` are in `requirements.txt`. If not, add them (`pip install gunicorn uvicorn`, then `pip freeze > requirements.txt`) and redeploy.
 
 6.  **Timeout Issues on Render (especially `/uploadpdf`)**:
     *   The `start.sh` script uses `--timeout 120` for Gunicorn. For very large PDFs, this might need to be increased. Be aware of Render's own request timeout limits (consult their documentation).
@@ -336,6 +349,6 @@ This project should include automated tests to ensure reliability. Assuming `pyt
 ### Debug Mode (Local Development)
 
 For more verbose error output locally:
-1.  Set `FLASK_ENV=development` in your `.env` file.
+1.  Set `APP_ENV=development` in your `.env` file. (This usually triggers `debug=True` in FastAPI or Uvicorn's `--reload` flag implies it).
 2.  Optionally, set `LOG_LEVEL=DEBUG` in `.env` for more detailed application logs.
-3.  Run the app: `python app.py`.
+3.  Run the app with Uvicorn: `uvicorn app:app --reload --port ${PORT:-8000}`.
