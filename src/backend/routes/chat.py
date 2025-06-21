@@ -4,203 +4,165 @@ import os
 import tempfile
 import logging
 from pathlib import Path
-from flask import Blueprint, request, jsonify, current_app
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, Body
+from pydantic import BaseModel
+from typing import Dict, Any
 
-# Create a Blueprint for chat-related routes
-chat_bp = Blueprint('chat_bp', __name__)
+from ..agents.rag_agent import ChatbotAgent
+from ..config import Config
+
+
+chat_router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Helper functions (can be moved to utils if needed elsewhere)
-def allowed_file(filename):
+#pydantic models
+
+class HealthResponse(BaseModel):
+    status: str
+    health: Dict[str, Any]
+    healthy: bool
+
+class AnswerRequest(BaseModel):
+    query: str
+
+class AnswerResponse(BaseModel):
+    answer: str
+
+class UploadResponse(BaseModel):
+    success: bool
+    message: str
+    filename: str
+
+class ErrorResponse(BaseModel):
+    detail: str
+
+# dependency injection
+
+def get_chatbot_agent(request: Request) -> ChatbotAgent:
+    """Dependency to get the chatbot agent instance from the app state."""
+    agent = request.app.state.chatbot_agent
+    if not agent:
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable: ChatbotAgent not initialized")
+    return agent
+
+def get_config(request: Request) -> Config:
+    """Dependency to get the config instance from the app state."""
+    return request.app.state.config
+
+#helper functions
+
+def allowed_file(filename: str, config: Config = Depends(get_config)):
     """Check if the uploaded file is allowed based on its extension."""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in current_app.config['ALLOWED_EXTENSIONS']
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in config.ALLOWED_EXTENSIONS
 
-def validate_request_size():
-    """Validate request content length against MAX_FILE_SIZE."""
-    if request.content_length and request.content_length > current_app.config['MAX_FILE_SIZE']:
-        return False
-    return True
+# api endpoints
 
-@chat_bp.route('/health', methods=['GET'])
-def health_check():
+@chat_router.get("/health", response_model=HealthResponse, tags=["Monitoring"])
+def health_check(agent: ChatbotAgent = Depends(get_chatbot_agent)):
     """Health check endpoint for the chatbot service."""
     try:
-        chatbot_agent = current_app.chatbot_agent
-        if not chatbot_agent:
-            logger.error("ChatbotAgent is not initialized during health check.")
-            return jsonify({
-                "status": "error",
-                "message": "ChatbotAgent not initialized",
-                "healthy": False
-            }), 500
-        
-        health_status = chatbot_agent.health_check()
-        
-        return jsonify({
+        health_status = agent.health_check()
+        return {
             "status": "success",
             "health": health_status,
-            "healthy": health_status["overall_health"]
-        }), 200 if health_status["overall_health"] else 503
-        
+            "healthy": health_status.get("overall_health", False)
+        }
     except Exception as e:
         logger.error(f"Health check endpoint error: {e}")
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "healthy": False
-        }), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@chat_bp.route('/answer', methods=['POST'])
-def answer_question():
+@chat_router.post("/answer", response_model=AnswerResponse, tags=["Chat"])
+def answer_question(
+    request_data: AnswerRequest,
+    agent: ChatbotAgent = Depends(get_chatbot_agent)
+):
     """
-    Endpoint to receive a user question and return an answer using the chatbot agent.
+    Endpoint to receive a user question and return an answer.
     """
     try:
-        chatbot_agent = current_app.chatbot_agent
-        if not chatbot_agent:
-            return jsonify({
-                "answer": "Service temporarily unavailable. Please try again later.",
-                "success": False,
-                "error": "ChatbotAgent not initialized"
-            }), 500
+        if not request_data.query or not request_data.query.strip():
+            raise HTTPException(status_code=400, detail="Empty query provided")
         
-        data = request.get_json()
-        if not data:
-            return jsonify({
-                "answer": "Invalid request format. Please provide a valid JSON request.",
-                "success": False,
-                "error": "No JSON data provided"
-            }), 400
-        
-        query = data.get('query', '').strip()
-        if not query:
-            return jsonify({
-                "answer": "Please provide a valid question.",
-                "success": False,
-                "error": "Empty query provided"
-            }), 400
-        
-        result = chatbot_agent.answer_question(query)
-        
-        return jsonify({
-            "answer": result["answer"]
-        }), 200
-        
+        result = agent.answer_question(request_data.query)
+        return {"answer": result.get("answer", "No answer found.")}
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
         logger.error(f"Error in answer endpoint: {e}")
-        return jsonify({
-            "answer": "I apologize, but I encountered an error while processing your question. Please try again.",
-            "success": False,
-            "error": str(e)
-        }), 500
+        raise HTTPException(status_code=500, detail="I apologize, but I encountered an error while processing your question.")
 
-@chat_bp.route('/uploadpdf', methods=['POST'])
-def upload_pdf():
+@chat_router.post("/uploadpdf", response_model=UploadResponse, tags=["Data Management"])
+async def upload_pdf(
+    file: UploadFile = File(...),
+    agent: ChatbotAgent = Depends(get_chatbot_agent),
+    config: Config = Depends(get_config)
+):
     """
-    Endpoint to upload and process a PDF file, adding its content to the knowledge base.
+    Endpoint to upload and process a PDF file.
     """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file selected")
+
+    if not allowed_file(file.filename, config):
+         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
+    # Secure filename is handled by UploadFile, but good to be aware.
+    # The filename attribute is sanitized.
+    filename = file.filename
+
+    # Handle file size check
+    # Note: A middleware is a better place for a robust size check.
+    # This is a basic check.
+    if file.size and file.size > config.MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"File too large. Maximum size is {config.MAX_FILE_SIZE // (1024*1024)}MB")
+
+    #save to a temporary file to be processed
     try:
-        chatbot_agent = current_app.chatbot_agent
-        if not chatbot_agent:
-            return jsonify({
-                "success": False,
-                "message": "Service temporarily unavailable",
-                "error": "ChatbotAgent not initialized"
-            }), 500
-        
-        if not validate_request_size():
-            return jsonify({
-                "success": False,
-                "message": f"File too large. Maximum size is {current_app.config['MAX_FILE_SIZE'] // (1024*1024)}MB",
-                "error": "File size exceeded"
-            }), 413
-        
-        if 'file' not in request.files:
-            return jsonify({
-                "success": False,
-                "message": "No file provided",
-                "error": "No file in request"
-            }), 400
-        
-        file = request.files['file']
-        
-        if file.filename == '':
-            return jsonify({
-                "success": False,
-                "message": "No file selected",
-                "error": "Empty filename"
-            }), 400
-        
-        if not allowed_file(file.filename):
-            return jsonify({
-                "success": False,
-                "message": "Only PDF files are allowed",
-                "error": "Invalid file type"
-            }), 400
-        
-        # Using secure_filename is important for security, but it's typically handled
-        # when saving to a known safe path. For temporary files, the naming is random.
-        # Still good practice to know it exists.
-        from werkzeug.utils import secure_filename
-        filename = secure_filename(file.filename)
-        if not filename:
-            return jsonify({
-                "success": False,
-                "message": "Invalid filename",
-                "error": "Filename not secure"
-            }), 400
-        
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
-            file.save(temp_file.name)
+            content = await file.read()
+            temp_file.write(content)
             temp_file_path = temp_file.name
-        
-        try:
-            user_id = None
-            if 'resume' in filename.lower() or 'cv' in filename.lower():
-                user_id = Path(filename).stem
-            
-            success = chatbot_agent.upload_pdf(temp_file_path, user_id)
-            
-            if success:
-                logger.info(f"Successfully processed PDF upload: {filename}")
-                return jsonify({
-                    "success": True,
-                    "message": f"PDF '{filename}' uploaded and processed successfully",
-                    "filename": filename
-                }), 200
-            else:
-                logger.warning(f"Failed to process PDF upload: {filename}")
-                return jsonify({
-                    "success": False,
-                    "message": "Failed to process the PDF file",
-                    "error": "Processing failed"
-                }), 500
-                
-        finally:
-            try:
-                os.unlink(temp_file_path)
-            except Exception as e:
-                logger.warning(f"Failed to delete temporary file {temp_file_path}: {e}")
-        
     except Exception as e:
-        logger.error(f"Error in upload endpoint: {e}")
-        return jsonify({
-            "success": False,
-            "message": "An error occurred while processing your upload",
-            "error": str(e)
-        }), 500
+        logger.error(f"Failed to save uploaded file temporarily: {e}")
+        raise HTTPException(status_code=500, detail="Could not save file for processing.")
 
-@chat_bp.route('/', methods=['GET'])
+    try:
+        user_id = None
+        if 'resume' in filename.lower() or 'cv' in filename.lower():
+            user_id = Path(filename).stem
+        
+        success = agent.upload_data(temp_file_path, user_id)
+        
+        if success:
+            logger.info(f"Successfully processed PDF upload: {filename}")
+            return {
+                "success": True,
+                "message": f"PDF '{filename}' uploaded and processed successfully",
+                "filename": filename
+            }
+        else:
+            logger.warning(f"Failed to process PDF upload: {filename}")
+            raise HTTPException(status_code=500, detail="Failed to process the PDF file")
+            
+    finally:
+        #clean up
+        try:
+            os.unlink(temp_file_path)
+        except Exception as e:
+            logger.warning(f"Failed to delete temporary file {temp_file_path}: {e}")
+
+@chat_router.get("/", tags=["General"])
 def index():
     """Root endpoint for the API, providing basic information."""
-    return jsonify({
+    return {
         "message": "PDF Assistant Chatbot API",
         "version": "1.0.0",
+        "docs": "/docs",
+        "redoc": "/redoc",
         "endpoints": {
             "/health": "GET - Health check",
             "/answer": "POST - Answer questions",
             "/uploadpdf": "POST - Upload PDF files"
         }
-    })
+    }
 
