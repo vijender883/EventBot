@@ -313,7 +313,7 @@ class APIClient:
                 url,
                 files=files,
                 headers=headers,
-                timeout=60
+                timeout=600
             )
 
             logger.info(f"Upload response status: {response.status_code}")
@@ -359,7 +359,7 @@ class APIClient:
             error = APIError(
                 "Upload timed out",
                 "UPLOAD_TIMEOUT",
-                {"timeout": 60, "file_name": pdf_file.name if pdf_file else "unknown"}
+                {"timeout": 600, "file_name": pdf_file.name if pdf_file else "unknown"}
             )
             ErrorHandler.log_error(
                 error,
