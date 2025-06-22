@@ -37,3 +37,10 @@ python-multipart
 # Add any other specific dependencies your project needs, e.g., for data processing
 # numpy
 # pandas
+pypdf-table-extraction
+pdfplumber
+opencv-python
+transformers
+torch
+sentence-transformers
+nltk
