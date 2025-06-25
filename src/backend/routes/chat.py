@@ -159,18 +159,6 @@ def validate_file_size(file: UploadFile) -> bool:
         f"File size: {size} bytes, Max allowed: {config.MAX_FILE_SIZE} bytes")
     return size <= config.MAX_FILE_SIZE
 
-
-# Expected columns for schema inference (optional fallback)
-EXPECTED_COLUMNS = [
-    "customer_id",
-    "customer_name",
-    "product",
-    "quantity",
-    "unit_price",
-    "total_price",
-    "purchase_date"
-]
-
 # PDF Processing Agent
 
 
@@ -242,7 +230,7 @@ class PDFProcessor:
                             continue
 
                         # Check for transposition
-                        if len(cleaned_table) < len(cleaned_table[0]) and len(cleaned_table) <= len(EXPECTED_COLUMNS):
+                        if len(cleaned_table) < len(cleaned_table[0]):
                             logger.warning(
                                 f"Possible transposed table detected on page {page_num}, table {table_idx}")
                             cleaned_table = list(
@@ -305,7 +293,7 @@ class PDFProcessor:
         return is_header
 
     def infer_schema(self, table_data: List[List[str]], table_name: str) -> tuple[List[Column], List[str]]:
-        """Infer schema for a single table and print detailed schema information."""
+        """Infer schema for a single table dynamically, without predefined columns."""
         if not table_data or not table_data[0]:
             logger.error(
                 f"Invalid table data provided for schema inference for {table_name}")
@@ -315,16 +303,6 @@ class PDFProcessor:
             raise ValueError("Invalid table data")
 
         headers = table_data[0]
-        # Check if headers resemble expected columns
-        if not any(col.lower().replace(" ", "_") in EXPECTED_COLUMNS for col in headers if col):
-            logger.warning(
-                f"Headers for {table_name} do not match expected columns, using raw headers")
-            print(
-                f"Warning: Headers do not match expected columns: {EXPECTED_COLUMNS}")
-        else:
-            logger.info(f"Headers for {table_name} match expected columns")
-            print("Headers match expected columns")
-
         logger.info(
             f"Inferring schema for table '{table_name}' with headers: {headers}")
         print(f"\n=== Schema Inference for Table '{table_name}' ===")
