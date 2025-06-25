@@ -93,7 +93,7 @@ The application is structured into several key components:
 The project's codebase is organized as follows:
 
 ```plaintext
-Chatbot_Pinecone_FastAPI_backend/  # (Example, repo name might change)
+EventBot/  # (Example, repo name might change)
 ├── .env                           # Local environment variables (gitignored)
 ├── .env.template                  # Template for .env file
 ├── Makefile                       # Defines common tasks like running, testing, linting
