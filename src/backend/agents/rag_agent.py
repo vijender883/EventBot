@@ -182,56 +182,87 @@ Now, please answer this question: {question}
                 "error": str(e)
             }
        
-    def upload_data(self, file_path: str, user_id: str = None) -> bool:
+
+    def upload_data(self, file_path: str, user_id: str = None, text_content: str = "", table_count: int = 0) -> bool:
         """
-        Uploads and processes a PDF file to the vector database.
+        Uploads and processes a PDF file to the vector database, including extracted text and table metadata.
         Renamed from upload_pdf to be more generic for BaseChatbotAgent interface.
 
         Args:
             file_path (str): Path to the PDF file.
-            user_id (str): Optional user ID for resume files.
-            
+            user_id (str, optional): User ID for resume files.
+            text_content (str, optional): Extracted text content from the PDF.
+            table_count (int, optional): Number of tables stored in the database.
+
         Returns:
             bool: Success status.
         """
         try:
-            logger.info(f"Processing PDF upload: {file_path}")
-            
+            logger.info(
+                f"Processing PDF upload: {file_path}, user_id: {user_id}, table_count: {table_count}")
+
+            # Load PDF using PyPDFLoader
             loader = PyPDFLoader(file_path)
             documents = loader.load()
-            
-            if not documents:
+
+            if not documents and not text_content:
                 logger.warning(f"No content extracted from PDF: {file_path}")
                 return False
-            
-            if user_id:
-                for doc in documents:
-                    doc.metadata["userId"] = user_id
-                    doc.metadata["document_type"] = "resume"
-            else:
-                for doc in documents:
-                    doc.metadata["document_type"] = "event_document"
-            
+
+            # Add extracted text_content as a document if provided
+            if text_content:
+                from langchain_core.documents import Document
+                text_doc = Document(
+                    page_content=text_content,
+                    metadata={"source": file_path, "document_type": "pdf_text"}
+                )
+                documents.append(text_doc)
+                logger.info(
+                    f"Added text_content as document, total documents: {len(documents)}")
+
+            # Add metadata to documents
+            for doc in documents:
+                # Set userId to empty string if None to satisfy Pinecone metadata requirements
+                doc.metadata["userId"] = str(user_id) if user_id else ""
+                doc.metadata["document_type"] = "resume" if user_id else "event_document"
+                doc.metadata["table_count"] = table_count
+                logger.debug(f"Document metadata: {doc.metadata}")
+
+            # Split documents into chunks
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=2000, 
+                chunk_size=2000,
                 chunk_overlap=800
             )
             chunks = text_splitter.split_documents(documents)
-            
+
             if not chunks:
                 logger.warning(f"No chunks created from PDF: {file_path}")
                 return False
-            
+
             logger.info(f"Split PDF into {len(chunks)} chunks.")
-            
+
+            # Validate metadata for Pinecone
+            for chunk in chunks:
+                for key, value in chunk.metadata.items():
+                    if value is None:
+                        logger.error(f"Invalid metadata in chunk: {key} is None")
+                        chunk.metadata[key] = ""  # Replace None with empty string
+                    elif not isinstance(value, (str, int, float, bool, list)):
+                        logger.warning(
+                            f"Invalid metadata type for {key}: {type(value)}, converting to string")
+                        chunk.metadata[key] = str(value)
+
+            # Add chunks to vectorstore (e.g., Pinecone)
             self.vectorstore.add_documents(chunks)
-            
-            logger.info(f"Successfully uploaded {len(chunks)} chunks to vector database.")
+
+            logger.info(
+                f"Successfully uploaded {len(chunks)} chunks to vector database.")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error uploading PDF {file_path}: {e}")
             return False
+
     
     def health_check(self) -> Dict[str, Any]:
         """Checks the health of all components used by the ChatbotAgent."""
