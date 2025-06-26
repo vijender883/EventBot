@@ -34,19 +34,6 @@ class BaseChatbotAgent(ABC):
         """
         pass
 
-    @abstractmethod
-    def upload_data(self, data_source: Any, **kwargs) -> bool:
-        """
-        Uploads and processes data into the agent's knowledge base.
-
-        Args:
-            data_source (Any): The source of the data to be uploaded (e.g., file path, text).
-            **kwargs: Additional keyword arguments (e.g., user_id for personalization, document_type).
-
-        Returns:
-            bool: True if the data was successfully uploaded and processed, False otherwise.
-        """
-        pass
 
     @abstractmethod
     def health_check(self) -> Dict[str, Any]:
@@ -58,4 +45,3 @@ class BaseChatbotAgent(ABC):
                             and an overall health status.
         """
         pass
-

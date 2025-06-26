@@ -1,28 +1,20 @@
-# Flask Backend Requirements
-flask
-flask-cors
-werkzeug
-
-
 # Frontend Requirments
 streamlit
-requests
-dotenv
 
 # AI/ML Dependencies
 google-generativeai
 pinecone
+langgraph
+langchain-core
 langchain
 langchain-community
 langchain-pinecone
 langchain-google-genai
 
-# PDF Processing
-pypdf
-
 # Utilities
 python-dotenv
 requests
+werkzeug
 
 # Development (optional)
 gunicorn
@@ -34,6 +26,12 @@ pydantic
 starlette
 python-multipart
 
-# Add any other specific dependencies your project needs, e.g., for data processing
-# numpy
-# pandas
+# Database
+sqlalchemy
+pymysql
+cryptography
+
+# PDF Processing
+pdfplumber
+pandas
+pypdf

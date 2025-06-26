@@ -7,14 +7,12 @@ from typing import Dict, Any, List
 
 import google.generativeai as genai
 from pinecone import Pinecone, ServerlessSpec
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.prompts import ChatPromptTemplate
 
-from ..config import Config # Import Config from the parent package
-from .base import BaseChatbotAgent # Import the base agent class
+from ..config import config  # Import config instance from the parent package
+from .base import BaseChatbotAgent  # Import the base agent class
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +28,12 @@ class ChatbotAgent(BaseChatbotAgent):
         Initializes the ChatbotAgent with credentials and sets up LLM,
         embeddings, and vector store components.
         """
-        # Load configurations from the Config class
-        self.gemini_api_key = Config.GEMINI_API_KEY
-        self.pinecone_api_key = Config.PINECONE_API_KEY
-        self.pinecone_index_name = Config.PINECONE_INDEX_NAME
-        self.pinecone_cloud = Config.PINECONE_CLOUD
-        self.pinecone_region = Config.PINECONE_REGION
+        # Load configurations from the config instance
+        self.gemini_api_key = config.GEMINI_API_KEY
+        self.pinecone_api_key = config.PINECONE_API_KEY
+        self.pinecone_index_name = config.PINECONE_INDEX_NAME
+        self.pinecone_cloud = config.PINECONE_CLOUD
+        self.pinecone_region = config.PINECONE_REGION
         
         # Validate required credentials before proceeding
         self._validate_credentials()
@@ -49,7 +47,8 @@ class ChatbotAgent(BaseChatbotAgent):
         
     def _validate_credentials(self):
         """Validate all required environment variables."""
-        Config.validate_required_env_vars() # Use the static method from Config
+        config.validate_pinecone_config()
+        config.validate_gemini_config()
         
     def _initialize_pinecone(self):
         """Initialize Pinecone client and vector store."""
@@ -182,56 +181,56 @@ Now, please answer this question: {question}
                 "error": str(e)
             }
        
-    def upload_data(self, file_path: str, user_id: str = None) -> bool:
-        """
-        Uploads and processes a PDF file to the vector database.
-        Renamed from upload_pdf to be more generic for BaseChatbotAgent interface.
+    # def upload_data(self, file_path: str, user_id: str = None) -> bool:
+    #     """
+    #     Uploads and processes a PDF file to the vector database.
+    #     Renamed from upload_pdf to be more generic for BaseChatbotAgent interface.
 
-        Args:
-            file_path (str): Path to the PDF file.
-            user_id (str): Optional user ID for resume files.
+    #     Args:
+    #         file_path (str): Path to the PDF file.
+    #         user_id (str): Optional user ID for resume files.
             
-        Returns:
-            bool: Success status.
-        """
-        try:
-            logger.info(f"Processing PDF upload: {file_path}")
+    #     Returns:
+    #         bool: Success status.
+    #     """
+    #     try:
+    #         logger.info(f"Processing PDF upload: {file_path}")
             
-            loader = PyPDFLoader(file_path)
-            documents = loader.load()
+    #         loader = PyPDFLoader(file_path)
+    #         documents = loader.load()
             
-            if not documents:
-                logger.warning(f"No content extracted from PDF: {file_path}")
-                return False
+    #         if not documents:
+    #             logger.warning(f"No content extracted from PDF: {file_path}")
+    #             return False
             
-            if user_id:
-                for doc in documents:
-                    doc.metadata["userId"] = user_id
-                    doc.metadata["document_type"] = "resume"
-            else:
-                for doc in documents:
-                    doc.metadata["document_type"] = "event_document"
+    #         if user_id:
+    #             for doc in documents:
+    #                 doc.metadata["userId"] = user_id
+    #                 doc.metadata["document_type"] = "resume"
+    #         else:
+    #             for doc in documents:
+    #                 doc.metadata["document_type"] = "event_document"
             
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=2000, 
-                chunk_overlap=800
-            )
-            chunks = text_splitter.split_documents(documents)
+    #         text_splitter = RecursiveCharacterTextSplitter(
+    #             chunk_size=2000, 
+    #             chunk_overlap=800
+    #         )
+    #         chunks = text_splitter.split_documents(documents)
             
-            if not chunks:
-                logger.warning(f"No chunks created from PDF: {file_path}")
-                return False
+    #         if not chunks:
+    #             logger.warning(f"No chunks created from PDF: {file_path}")
+    #             return False
             
-            logger.info(f"Split PDF into {len(chunks)} chunks.")
+    #         logger.info(f"Split PDF into {len(chunks)} chunks.")
             
-            self.vectorstore.add_documents(chunks)
+    #         self.vectorstore.add_documents(chunks)
             
-            logger.info(f"Successfully uploaded {len(chunks)} chunks to vector database.")
-            return True
+    #         logger.info(f"Successfully uploaded {len(chunks)} chunks to vector database.")
+    #         return True
             
-        except Exception as e:
-            logger.error(f"Error uploading PDF {file_path}: {e}")
-            return False
+    #     except Exception as e:
+    #         logger.error(f"Error uploading PDF {file_path}: {e}")
+    #         return False
     
     def health_check(self) -> Dict[str, Any]:
         """Checks the health of all components used by the ChatbotAgent."""

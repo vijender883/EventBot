@@ -1,75 +1,110 @@
 # src/backend/services/orchestrator.py
 
 import logging
-from typing import Dict, Any
-
-from ..agents.rag_agent import ChatbotAgent # Import the specific agent
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
 class Orchestrator:
     """
-    Orchestrates interactions between different agents or services.
-
-    For this initial setup, it primarily wraps the ChatbotAgent,
-    but it's designed to be extensible for multi-agent scenarios.
+    Orchestrator that can work with either RAG Agent or Manager Agent
     """
 
-    def __init__(self, chatbot_agent: ChatbotAgent):
+    def __init__(self, chatbot_agent=None, manager_agent=None):
         """
-        Initializes the Orchestrator with an instance of ChatbotAgent.
-
+        Initialize orchestrator with optional agents.
+        
         Args:
-            chatbot_agent (ChatbotAgent): An initialized instance of the ChatbotAgent.
+            chatbot_agent: Legacy RAG-based chatbot agent
+            manager_agent: New LangGraph-based manager agent
         """
-        if not isinstance(chatbot_agent, ChatbotAgent):
-            raise TypeError("Provided agent is not an instance of ChatbotAgent.")
         self.chatbot_agent = chatbot_agent
-        logger.info("Orchestrator initialized with ChatbotAgent.")
+        self.manager_agent = manager_agent
+        
+        # Determine functionality based on available agents
+        self.is_functional = (chatbot_agent is not None) or (manager_agent is not None)
+        self.use_manager = manager_agent is not None
+        
+        if self.use_manager:
+            logger.info("Orchestrator initialized with Manager Agent (LangGraph).")
+        elif chatbot_agent:
+            logger.info("Orchestrator initialized with legacy ChatbotAgent.")
+        else:
+            logger.warning("Orchestrator initialized without any agents - limited functionality.")
 
     def process_query(self, query: str) -> Dict[str, Any]:
         """
-        Processes a user query by delegating it to the appropriate agent.
-
-        In this version, it simply calls the ChatbotAgent's answer_question method.
-        Future versions could add logic to:
-        - Determine intent (e.g., event question vs. resume question)
-        - Route to different specialized agents
-        - Combine responses from multiple agents
-        - Handle conversational context
-
-        Args:
-            query (str): The user's question.
-
-        Returns:
-            Dict[str, Any]: The response from the delegated agent.
+        Process a user query using the available agent.
         """
-        logger.info(f"Orchestrating query: {query[:50]}...")
-        # For now, directly use the chatbot agent
-        response = self.chatbot_agent.answer_question(query)
-        return response
-
-    def ingest_document(self, file_path: str, user_id: str = None) -> bool:
-        """
-        Ingests a document by delegating to the appropriate agent.
-
-        Args:
-            file_path (str): The path to the document file.
-            user_id (str, optional): An identifier for the user associated with the document.
-                                     Defaults to None.
-
-        Returns:
-            bool: True if ingestion was successful, False otherwise.
-        """
-        logger.info(f"Orchestrating document ingestion for: {file_path}")
-        # For now, directly use the chatbot agent's upload_data method
-        success = self.chatbot_agent.upload_data(file_path, user_id=user_id)
-        return success
+        logger.info(f"Processing query: {query[:50]}...")
+        
+        if not self.is_functional:
+            logger.warning("No agents available for query processing")
+            return {
+                "answer": "Service temporarily unavailable. Please configure PINECONE_API_KEY and GEMINI_API_KEY environment variables to enable AI functionality.",
+                "success": False,
+                "error": "No agents initialized - missing API configuration"
+            }
+        
+        try:
+            if self.use_manager:
+                logger.info("Delegating query to Manager Agent")
+                response = self.manager_agent.process_query(query)
+                logger.info("Successfully processed query through Manager Agent")
+                return response
+            else:
+                logger.info("Delegating query to legacy ChatbotAgent")
+                response = self.chatbot_agent.answer_question(query)
+                logger.info("Successfully processed query through ChatbotAgent")
+                return response
+                
+        except Exception as e:
+            logger.error(f"Error processing query: {e}", exc_info=True)
+            return {
+                "answer": "An error occurred while processing your question. Please try again.",
+                "success": False,
+                "error": str(e)
+            }
 
     def get_service_health(self) -> Dict[str, Any]:
         """
-        Checks the health of the underlying chatbot agent and other services.
+        Get service health status.
         """
-        logger.info("Checking service health via orchestrator.")
-        return self.chatbot_agent.health_check()
-
+        health_status = {
+            "orchestrator": True,
+            "chatbot_agent": False,
+            "manager_agent": False,
+            "overall_health": False,
+            "active_agent": None
+        }
+        
+        if self.use_manager and self.manager_agent:
+            try:
+                manager_health = self.manager_agent.health_check()
+                health_status["manager_agent"] = manager_health.get("overall_health", False)
+                health_status["active_agent"] = "manager"
+                health_status["manager_details"] = manager_health
+            except Exception as e:
+                logger.error(f"Error checking Manager Agent health: {e}", exc_info=True)
+                health_status["manager_agent"] = False
+        
+        elif self.chatbot_agent:
+            try:
+                chatbot_health = self.chatbot_agent.health_check()
+                health_status["chatbot_agent"] = chatbot_health.get("overall_health", False)
+                health_status["active_agent"] = "chatbot"
+                health_status["chatbot_details"] = chatbot_health
+            except Exception as e:
+                logger.error(f"Error checking ChatbotAgent health: {e}", exc_info=True)
+                health_status["chatbot_agent"] = False
+        
+        # Overall health is true if any agent is healthy
+        health_status["overall_health"] = (
+            health_status["manager_agent"] or health_status["chatbot_agent"]
+        )
+        
+        if not health_status["overall_health"]:
+            health_status["message"] = "No healthy agents available"
+        
+        logger.info(f"Service health status: {health_status['overall_health']}")
+        return health_status
