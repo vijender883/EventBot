@@ -69,15 +69,35 @@ def create_app():
             logger.error(f"Failed to import Orchestrator: {e}", exc_info=True)
             raise
         
-        # Try to import and initialize Manager Agent (preferred)
+        # First, try to initialize ChatbotAgent
+        try:
+            logger.info("Attempting to import and initialize ChatbotAgent...")
+            from .agents.rag_agent import ChatbotAgent
+            logger.info("Successfully imported ChatbotAgent")
+            
+            logger.info("Attempting to initialize ChatbotAgent...")
+            chatbot_agent = ChatbotAgent()
+            logger.info("✅ Successfully initialized ChatbotAgent")
+            
+        except ValueError as e:
+            logger.warning(f"ChatbotAgent initialization failed due to configuration: {e}")
+            chatbot_agent = None
+        except Exception as e:
+            logger.error(f"ChatbotAgent initialization failed with unexpected error: {e}", exc_info=True)
+            chatbot_agent = None
+        
+        # Now try to initialize Manager Agent with the ChatbotAgent
         try:
             logger.info("Attempting to import Manager Agent...")
             from .agents.manager_agent import ManagerAgent
             logger.info("Successfully imported Manager Agent")
             
-            logger.info("Attempting to initialize Manager Agent...")
-            manager_agent = ManagerAgent(gemini_api_key=app.state.config.GEMINI_API_KEY)
-            logger.info("✅ Successfully initialized Manager Agent")
+            logger.info("Attempting to initialize Manager Agent with ChatbotAgent...")
+            manager_agent = ManagerAgent(
+                gemini_api_key=app.state.config.GEMINI_API_KEY,
+                chatbot_agent=chatbot_agent  # Now chatbot_agent is properly initialized
+            )
+            logger.info("✅ Successfully initialized Manager Agent with ChatbotAgent")
             
         except ValueError as e:
             logger.warning(f"Manager Agent initialization failed due to configuration: {e}")
@@ -85,24 +105,6 @@ def create_app():
         except Exception as e:
             logger.error(f"Manager Agent initialization failed with unexpected error: {e}", exc_info=True)
             manager_agent = None
-        
-        # Fall back to legacy ChatbotAgent if Manager Agent failed
-        if manager_agent is None:
-            try:
-                logger.info("Attempting to import legacy ChatbotAgent as fallback...")
-                from .agents.rag_agent import ChatbotAgent
-                logger.info("Successfully imported ChatbotAgent")
-                
-                logger.info("Attempting to initialize ChatbotAgent...")
-                chatbot_agent = ChatbotAgent()
-                logger.info("✅ Successfully initialized ChatbotAgent as fallback")
-                
-            except ValueError as e:
-                logger.warning(f"ChatbotAgent initialization failed due to configuration: {e}")
-                chatbot_agent = None
-            except Exception as e:
-                logger.error(f"ChatbotAgent initialization failed with unexpected error: {e}", exc_info=True)
-                chatbot_agent = None
         
         # Initialize orchestrator with available agents
         try:

@@ -26,13 +26,24 @@ class ManagerAgent:
     Manager Agent using LangGraph to orchestrate between Table and RAG nodes
     """
     
-    def __init__(self, gemini_api_key: str):
-        """Initialize the Manager Agent with Gemini LLM"""
+    def __init__(self, gemini_api_key: str, chatbot_agent=None):
+        """Initialize the Manager Agent with Gemini LLM and optional ChatbotAgent"""
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash",
             google_api_key=gemini_api_key,
             temperature=0.1
         )
+        self.chatbot_agent = chatbot_agent
+        
+        # Initialize Combiner Agent
+        try:
+            from .combiner_agent import CombinerAgent
+            self.combiner_agent = CombinerAgent(gemini_api_key)
+            logger.info("Combiner Agent initialized successfully in Manager Agent")
+        except Exception as e:
+            logger.error(f"Failed to initialize Combiner Agent: {e}")
+            self.combiner_agent = None
+        
         self.workflow = self._create_workflow()
     
     def _create_workflow(self) -> StateGraph:
@@ -134,31 +145,59 @@ class ManagerAgent:
         return {"table_response": table_response}
     
     def _rag_node(self, state: AgentState) -> Dict[str, Any]:
-        """RAG node for handling knowledge queries"""
+        """RAG node for handling knowledge queries using ChatbotAgent"""
         print(f"[DEBUG] RAG Node called with query: {state.query}")
         
-        # For now, just return the same query with a debug message
-        rag_response = f"RAG processing: {state.query}"
-        print(f"[DEBUG] RAG Node response: {rag_response}")
+        try:
+            if self.chatbot_agent:
+                # Use the ChatbotAgent's answer_question function
+                response = self.chatbot_agent.answer_question(state.query)
+                rag_response = response.get("answer", f"RAG processing: {state.query}")
+                print(f"[DEBUG] RAG Node response from ChatbotAgent: {rag_response}")
+            else:
+                # Fallback if no ChatbotAgent is available
+                rag_response = f"RAG processing: {state.query}"
+                print(f"[DEBUG] RAG Node response (fallback): {rag_response}")
+        except Exception as e:
+            logger.error(f"Error in RAG node: {e}")
+            rag_response = f"RAG processing error: {state.query}"
+            print(f"[DEBUG] RAG Node error response: {rag_response}")
         
         return {"rag_response": rag_response}
     
     def _combiner_node(self, state: AgentState) -> Dict[str, Any]:
-        """Combiner node to merge responses from Table and RAG nodes"""
+        """Combiner node to merge responses from Table and RAG nodes using CombinerAgent"""
         print(f"[DEBUG] Combiner Node called")
         
-        combined_response = ""
+        try:
+            if self.combiner_agent:
+                # Use the intelligent CombinerAgent
+                combined_response = self.combiner_agent.combine_responses(
+                    original_query=state.query,
+                    table_response=state.table_response if state.table_response else None,
+                    rag_response=state.rag_response if state.rag_response else None
+                )
+                print(f"[DEBUG] Combiner Node using CombinerAgent: {combined_response[:100]}...")
+            else:
+                # Fallback to simple combination
+                combined_response = ""
+                
+                if state.table_response and state.rag_response:
+                    combined_response = f"{state.rag_response}\n\n{state.table_response}"
+                elif state.table_response:
+                    combined_response = state.table_response
+                elif state.rag_response:
+                    combined_response = state.rag_response
+                else:
+                    combined_response = "No response generated"
+                
+                print(f"[DEBUG] Combiner Node using fallback combination: {combined_response}")
         
-        if state.table_response and state.rag_response:
-            combined_response = f"{state.rag_response}\n\n{state.table_response}"
-        elif state.table_response:
-            combined_response = state.table_response
-        elif state.rag_response:
-            combined_response = state.rag_response
-        else:
-            combined_response = "No response generated"
-        
-        print(f"[DEBUG] Combiner Node response: {combined_response}")
+        except Exception as e:
+            logger.error(f"Error in combiner node: {e}")
+            # Simple fallback on error
+            combined_response = state.rag_response or state.table_response or "Error generating response"
+            print(f"[DEBUG] Combiner Node error fallback: {combined_response}")
         
         return {"response": combined_response}
     
@@ -231,10 +270,18 @@ class ManagerAgent:
             # Test LLM connection
             test_response = self.llm.invoke([HumanMessage(content="Hello")])
             
+            # Check combiner agent health
+            combiner_health = True
+            if self.combiner_agent:
+                combiner_status = self.combiner_agent.health_check()
+                combiner_health = combiner_status.get("overall_health", False)
+            
             return {
                 "manager_agent": True,
                 "llm_connection": True,
                 "workflow_ready": self.workflow is not None,
+                "combiner_agent": combiner_health,
+                "chatbot_agent_available": self.chatbot_agent is not None,
                 "overall_health": True
             }
         except Exception as e:
@@ -243,6 +290,8 @@ class ManagerAgent:
                 "manager_agent": False,
                 "llm_connection": False,
                 "workflow_ready": False,
+                "combiner_agent": False,
+                "chatbot_agent_available": False,
                 "overall_health": False,
                 "error": str(e)
             }

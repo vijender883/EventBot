@@ -11,13 +11,23 @@ load_dotenv()
 async def test_manager_agent():
     """Test the Manager Agent with different query types"""
     
+    # Initialize ChatbotAgent first (if available)
+    chatbot_agent = None
+    try:
+        from agents.rag_agent import ChatbotAgent
+        chatbot_agent = ChatbotAgent()
+        print("✅ ChatbotAgent initialized successfully")
+    except Exception as e:
+        print(f"⚠️  ChatbotAgent initialization failed: {e}")
+        print("Will use fallback mode for RAG queries")
+    
     # Initialize Manager Agent
     gemini_api_key = os.getenv("GEMINI_API_KEY")
     if not gemini_api_key:
         print("Error: GEMINI_API_KEY not found in environment variables")
         return
     
-    manager = ManagerAgent(gemini_api_key)
+    manager = ManagerAgent(gemini_api_key, chatbot_agent)
     
     # Test queries
     test_queries = [
