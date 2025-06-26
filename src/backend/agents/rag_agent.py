@@ -7,8 +7,6 @@ from typing import Dict, Any, List
 
 import google.generativeai as genai
 from pinecone import Pinecone, ServerlessSpec
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.prompts import ChatPromptTemplate
@@ -183,56 +181,56 @@ Now, please answer this question: {question}
                 "error": str(e)
             }
        
-    def upload_data(self, file_path: str, user_id: str = None) -> bool:
-        """
-        Uploads and processes a PDF file to the vector database.
-        Renamed from upload_pdf to be more generic for BaseChatbotAgent interface.
+    # def upload_data(self, file_path: str, user_id: str = None) -> bool:
+    #     """
+    #     Uploads and processes a PDF file to the vector database.
+    #     Renamed from upload_pdf to be more generic for BaseChatbotAgent interface.
 
-        Args:
-            file_path (str): Path to the PDF file.
-            user_id (str): Optional user ID for resume files.
+    #     Args:
+    #         file_path (str): Path to the PDF file.
+    #         user_id (str): Optional user ID for resume files.
             
-        Returns:
-            bool: Success status.
-        """
-        try:
-            logger.info(f"Processing PDF upload: {file_path}")
+    #     Returns:
+    #         bool: Success status.
+    #     """
+    #     try:
+    #         logger.info(f"Processing PDF upload: {file_path}")
             
-            loader = PyPDFLoader(file_path)
-            documents = loader.load()
+    #         loader = PyPDFLoader(file_path)
+    #         documents = loader.load()
             
-            if not documents:
-                logger.warning(f"No content extracted from PDF: {file_path}")
-                return False
+    #         if not documents:
+    #             logger.warning(f"No content extracted from PDF: {file_path}")
+    #             return False
             
-            if user_id:
-                for doc in documents:
-                    doc.metadata["userId"] = user_id
-                    doc.metadata["document_type"] = "resume"
-            else:
-                for doc in documents:
-                    doc.metadata["document_type"] = "event_document"
+    #         if user_id:
+    #             for doc in documents:
+    #                 doc.metadata["userId"] = user_id
+    #                 doc.metadata["document_type"] = "resume"
+    #         else:
+    #             for doc in documents:
+    #                 doc.metadata["document_type"] = "event_document"
             
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=2000, 
-                chunk_overlap=800
-            )
-            chunks = text_splitter.split_documents(documents)
+    #         text_splitter = RecursiveCharacterTextSplitter(
+    #             chunk_size=2000, 
+    #             chunk_overlap=800
+    #         )
+    #         chunks = text_splitter.split_documents(documents)
             
-            if not chunks:
-                logger.warning(f"No chunks created from PDF: {file_path}")
-                return False
+    #         if not chunks:
+    #             logger.warning(f"No chunks created from PDF: {file_path}")
+    #             return False
             
-            logger.info(f"Split PDF into {len(chunks)} chunks.")
+    #         logger.info(f"Split PDF into {len(chunks)} chunks.")
             
-            self.vectorstore.add_documents(chunks)
+    #         self.vectorstore.add_documents(chunks)
             
-            logger.info(f"Successfully uploaded {len(chunks)} chunks to vector database.")
-            return True
+    #         logger.info(f"Successfully uploaded {len(chunks)} chunks to vector database.")
+    #         return True
             
-        except Exception as e:
-            logger.error(f"Error uploading PDF {file_path}: {e}")
-            return False
+    #     except Exception as e:
+    #         logger.error(f"Error uploading PDF {file_path}: {e}")
+    #         return False
     
     def health_check(self) -> Dict[str, Any]:
         """Checks the health of all components used by the ChatbotAgent."""

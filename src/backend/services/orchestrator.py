@@ -7,40 +7,57 @@ logger = logging.getLogger(__name__)
 
 class Orchestrator:
     """
-    Simple, robust orchestrator that can handle missing dependencies.
+    Orchestrator that can work with either RAG Agent or Manager Agent
     """
 
-    def __init__(self, chatbot_agent=None):
+    def __init__(self, chatbot_agent=None, manager_agent=None):
         """
-        Initialize orchestrator with optional chatbot agent.
+        Initialize orchestrator with optional agents.
+        
+        Args:
+            chatbot_agent: Legacy RAG-based chatbot agent
+            manager_agent: New LangGraph-based manager agent
         """
         self.chatbot_agent = chatbot_agent
-        self.is_functional = chatbot_agent is not None
+        self.manager_agent = manager_agent
         
-        if self.is_functional:
-            logger.info("Orchestrator initialized with functional ChatbotAgent.")
+        # Determine functionality based on available agents
+        self.is_functional = (chatbot_agent is not None) or (manager_agent is not None)
+        self.use_manager = manager_agent is not None
+        
+        if self.use_manager:
+            logger.info("Orchestrator initialized with Manager Agent (LangGraph).")
+        elif chatbot_agent:
+            logger.info("Orchestrator initialized with legacy ChatbotAgent.")
         else:
-            logger.warning("Orchestrator initialized without ChatbotAgent - limited functionality.")
+            logger.warning("Orchestrator initialized without any agents - limited functionality.")
 
     def process_query(self, query: str) -> Dict[str, Any]:
         """
-        Process a user query.
+        Process a user query using the available agent.
         """
         logger.info(f"Processing query: {query[:50]}...")
         
         if not self.is_functional:
-            logger.warning("ChatbotAgent not available for query processing")
+            logger.warning("No agents available for query processing")
             return {
                 "answer": "Service temporarily unavailable. Please configure PINECONE_API_KEY and GEMINI_API_KEY environment variables to enable AI functionality.",
                 "success": False,
-                "error": "ChatbotAgent not initialized - missing API configuration"
+                "error": "No agents initialized - missing API configuration"
             }
         
         try:
-            logger.info("Delegating query to ChatbotAgent")
-            response = self.chatbot_agent.answer_question(query)
-            logger.info("Successfully processed query through ChatbotAgent")
-            return response
+            if self.use_manager:
+                logger.info("Delegating query to Manager Agent")
+                response = self.manager_agent.process_query(query)
+                logger.info("Successfully processed query through Manager Agent")
+                return response
+            else:
+                logger.info("Delegating query to legacy ChatbotAgent")
+                response = self.chatbot_agent.answer_question(query)
+                logger.info("Successfully processed query through ChatbotAgent")
+                return response
+                
         except Exception as e:
             logger.error(f"Error processing query: {e}", exc_info=True)
             return {
@@ -49,41 +66,45 @@ class Orchestrator:
                 "error": str(e)
             }
 
-    def ingest_document(self, file_path: str, user_id: str = None) -> bool:
-        """
-        Ingest a document.
-        """
-        if not self.is_functional:
-            logger.error("Cannot ingest document: ChatbotAgent not available")
-            return False
-        
-        try:
-            return self.chatbot_agent.upload_data(file_path, user_id=user_id)
-        except Exception as e:
-            logger.error(f"Error ingesting document: {e}", exc_info=True)
-            return False
-
     def get_service_health(self) -> Dict[str, Any]:
         """
         Get service health status.
         """
-        if not self.is_functional:
-            return {
-                "orchestrator": True,
-                "chatbot_agent": False,
-                "overall_health": False,
-                "message": "ChatbotAgent not initialized"
-            }
+        health_status = {
+            "orchestrator": True,
+            "chatbot_agent": False,
+            "manager_agent": False,
+            "overall_health": False,
+            "active_agent": None
+        }
         
-        try:
-            health = self.chatbot_agent.health_check()
-            health["orchestrator"] = True
-            return health
-        except Exception as e:
-            logger.error(f"Error checking health: {e}", exc_info=True)
-            return {
-                "orchestrator": True,
-                "chatbot_agent": False,
-                "overall_health": False,
-                "error": str(e)
-            }
+        if self.use_manager and self.manager_agent:
+            try:
+                manager_health = self.manager_agent.health_check()
+                health_status["manager_agent"] = manager_health.get("overall_health", False)
+                health_status["active_agent"] = "manager"
+                health_status["manager_details"] = manager_health
+            except Exception as e:
+                logger.error(f"Error checking Manager Agent health: {e}", exc_info=True)
+                health_status["manager_agent"] = False
+        
+        elif self.chatbot_agent:
+            try:
+                chatbot_health = self.chatbot_agent.health_check()
+                health_status["chatbot_agent"] = chatbot_health.get("overall_health", False)
+                health_status["active_agent"] = "chatbot"
+                health_status["chatbot_details"] = chatbot_health
+            except Exception as e:
+                logger.error(f"Error checking ChatbotAgent health: {e}", exc_info=True)
+                health_status["chatbot_agent"] = False
+        
+        # Overall health is true if any agent is healthy
+        health_status["overall_health"] = (
+            health_status["manager_agent"] or health_status["chatbot_agent"]
+        )
+        
+        if not health_status["overall_health"]:
+            health_status["message"] = "No healthy agents available"
+        
+        logger.info(f"Service health status: {health_status['overall_health']}")
+        return health_status
