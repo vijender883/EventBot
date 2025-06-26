@@ -1,62 +1,443 @@
 # src/backend/utils/pdf_processor.py
 
+import json
 import logging
+import os
 import re
 import hashlib
-from typing import Dict, List, Any
 from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple
+from dataclasses import dataclass
 
 import pdfplumber
 import pandas as pd
-from sqlalchemy import create_engine, MetaData, Table, Column, String, Float, Integer, insert
+import google.generativeai as genai
+from pydantic import BaseModel, Field, create_model
+from sqlalchemy import create_engine, MetaData, Table, Column, String, Float, Integer, insert, Text
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class TableInfo:
+    """Data class to hold table information."""
+    name: str
+    schema: Dict[str, str]
+    description: str
+    data: List[List[str]]
+    column_count: int
+
+class TableSchema(BaseModel):
+    """Pydantic model for table schema from Gemini."""
+    table_name: str = Field(..., description="Name of the table")
+    table_schema: Dict[str, str] = Field(..., description="Column name to type mapping")
+    description: str = Field(..., description="Description of the table content")
+
 class PDFProcessor:
-    """Utility class for processing PDF files and storing data in MySQL."""
+    """Enhanced utility class for processing PDF files with Gemini-powered schema inference."""
     
-    def __init__(self, database_url: str = None):
+    def __init__(self, database_url: str = None, gemini_api_key: str = None):
         try:
-            # If no database_url provided, get it from config
+            # Database setup
             if database_url is None:
                 from ..config import config
                 database_url = config.database_url
                 
             self.engine = create_engine(database_url)
             self.metadata = MetaData()
+            
+            # Gemini setup
+            if gemini_api_key is None:
+                from ..config import config
+                gemini_api_key = config.GEMINI_API_KEY
+                
+            genai.configure(api_key=gemini_api_key)
+            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # Schema storage
+            self.schema_file = Path("table_schema.json")
+            self.schemas = self._load_schemas()
+            
             with self.engine.connect() as conn:
-                logger.info("Successfully connected to MySQL RDS")
-                print("Successfully connected to MySQL RDS")
+                logger.info("Successfully connected to MySQL RDS and Gemini")
+                print("Successfully connected to MySQL RDS and Gemini")
         except SQLAlchemyError as e:
             logger.error(f"Database connection failed: {str(e)}")
             print(f"Error: Database connection failed: {str(e)}")
             raise HTTPException(
                 status_code=500, detail=f"Database connection error: {str(e)}")
+        except Exception as e:
+            logger.error(f"Gemini configuration failed: {str(e)}")
+            print(f"Error: Gemini configuration failed: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Gemini configuration error: {str(e)}")
 
-    def extract_content(self, pdf_path: str) -> Dict[str, Any]:
-        """Extract text and tables from PDF, handling multi-page tables."""
-        text_chunks = []
-        tables = []
-        table_names = []
-        current_table = None
-        previous_row_count = None
+    def _load_schemas(self) -> Dict:
+        """Load existing table schemas from JSON file."""
+        if self.schema_file.exists():
+            try:
+                with open(self.schema_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load schemas: {e}")
+                return {}
+        return {}
+
+    def _save_schemas(self):
+        """Save table schemas to JSON file."""
+        try:
+            with open(self.schema_file, 'w') as f:
+                json.dump(self.schemas, f, indent=2)
+            logger.info(f"Saved schemas to {self.schema_file}")
+        except Exception as e:
+            logger.error(f"Failed to save schemas: {e}")
+
+    def _get_context_text(self, pdf_path: str, page_num: int, table_position: int) -> str:
+        """Extract 400 characters of text before the table for context."""
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                page = pdf.pages[page_num - 1]
+                text = page.extract_text() or ""
+                
+                # Simple heuristic: take text before the table position
+                # This is approximate since we don't have exact table positions
+                context_length = min(400, len(text) // 2)
+                return text[:context_length]
+        except Exception as e:
+            logger.warning(f"Failed to extract context text: {e}")
+            return ""
+
+    def _query_gemini_for_schema(self, table_data: List[List[str]], context_text: str, file_hash: str) -> TableSchema:
+        """Query Gemini for table schema and metadata."""
+        # Prepare the table preview (top 3 rows)
+        preview_rows = table_data[:3]
+        table_preview = "\n".join(["\t".join(row) for row in preview_rows])
         
-        # Generate a unique prefix based on file content
+        prompt = f"""
+Analyze this table data and provide schema information in JSON format.
+
+Context (text before table): {context_text[:400]}
+
+Table Preview (first 3 rows):
+{table_preview}
+
+Please provide a JSON response with:
+1. table_name: A descriptive name for this table (use format: pdf_{file_hash}_tablename)
+2. table_schema: Object mapping column names to SQL types (use: "string", "integer", "float", "text", "currency", "percentage")
+3. description: Brief description of what this table contains
+
+Schema type guidelines:
+- "currency": For monetary values (e.g., $4.34, €10.50, ¥1000)
+- "percentage": For percentage values (e.g., 25%, 0.15%)
+- "float": For plain decimal numbers
+- "integer": For whole numbers
+- "string": For text data
+- "text": For longer text content
+
+Example response:
+{{
+    "table_name": "pdf_{file_hash}_financial_summary",
+    "table_schema": {{
+        "year": "integer",
+        "revenue": "currency",
+        "profit_margin": "percentage",
+        "description": "text"
+    }},
+    "description": "Financial summary table showing yearly revenue and profit margins"
+}}
+
+Respond with valid JSON only:
+"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Clean up the response to extract JSON
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+            
+            schema_data = json.loads(response_text)
+            return TableSchema(**schema_data)
+            
+        except Exception as e:
+            logger.error(f"Failed to query Gemini for schema: {e}")
+            # Fallback to basic schema
+            headers = table_data[0] if table_data else []
+            fallback_schema = {
+                header.lower().replace(" ", "_"): "string" 
+                for header in headers
+            }
+            return TableSchema(
+                table_name=f"pdf_{file_hash}_table_{len(self.schemas) + 1}",
+                table_schema=fallback_schema,
+                description="Auto-generated table schema"
+            )
+
+    def _query_gemini_for_continuation(self, current_table_headers: List[str], new_table_preview: List[List[str]]) -> bool:
+        """Query Gemini to check if a table is a continuation of the previous one."""
+        current_headers_str = "\t".join(current_table_headers)
+        new_preview_str = "\n".join(["\t".join(row) for row in new_table_preview[:3]])
+        
+        prompt = f"""
+Determine if this new table data is a continuation of the previous table.
+
+Current table headers:
+{current_headers_str}
+
+New table preview (first 3 rows):
+{new_preview_str}
+
+Respond with only "YES" if this is a continuation (same structure, no headers), or "NO" if it's a new table.
+"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            result = response.text.strip().upper()
+            return "YES" in result
+        except Exception as e:
+            logger.error(f"Failed to query Gemini for continuation: {e}")
+            return False
+
+    def _parse_numeric_value(self, value: str, expected_type: str) -> Optional[float]:
+        """
+        Parse numeric values with units (currency, percentages, etc.) into clean numbers.
+        
+        Args:
+            value: The string value to parse
+            expected_type: The expected data type (currency, percentage, float, integer)
+            
+        Returns:
+            Parsed numeric value or None if parsing fails
+        """
+        if not value or not value.strip():
+            return None
+            
+        # Clean the value
+        cleaned_value = value.strip()
+        
+        try:
+            # Handle currency values
+            if expected_type == "currency":
+                # Remove currency symbols and common formatting
+                import re
+                # Common currency symbols: $, €, £, ¥, ₹, etc.
+                currency_pattern = r'[\$€£¥₹₽₩¢₦₨₪₫₡₲₴₸₵₶₷₹₺₻₼₽₾₿]'
+                cleaned_value = re.sub(currency_pattern, '', cleaned_value)
+                # Remove commas used as thousands separators
+                cleaned_value = cleaned_value.replace(',', '')
+                # Remove spaces
+                cleaned_value = cleaned_value.replace(' ', '')
+                # Handle parentheses for negative values (accounting format)
+                if cleaned_value.startswith('(') and cleaned_value.endswith(')'):
+                    cleaned_value = '-' + cleaned_value[1:-1]
+                return float(cleaned_value) if cleaned_value else None
+                
+            # Handle percentage values
+            elif expected_type == "percentage":
+                if '%' in cleaned_value:
+                    cleaned_value = cleaned_value.replace('%', '').strip()
+                    # Convert percentage to decimal (25% -> 0.25)
+                    return float(cleaned_value) / 100 if cleaned_value else None
+                else:
+                    # Assume it's already in decimal format
+                    return float(cleaned_value) if cleaned_value else None
+                    
+            # Handle regular numeric values with potential formatting
+            elif expected_type in ["float", "integer"]:
+                # Remove common formatting characters
+                import re
+                # Remove everything except digits, decimal points, minus signs, and 'e' for scientific notation
+                cleaned_value = re.sub(r'[^\d\.\-e]', '', cleaned_value)
+                
+                if expected_type == "integer":
+                    # For integers, convert to float first then to int to handle decimal formatting
+                    float_val = float(cleaned_value) if cleaned_value else None
+                    return int(float_val) if float_val is not None else None
+                else:
+                    return float(cleaned_value) if cleaned_value else None
+                    
+            # If not a numeric type, return None
+            else:
+                return None
+                
+        except (ValueError, TypeError) as e:
+            logger.debug(f"Failed to parse '{value}' as {expected_type}: {e}")
+            return None
+
+    def _create_pydantic_model(self, schema_info: TableSchema) -> type:
+        """Create a Pydantic model from the schema information with custom validators."""
+        from pydantic import BaseModel, Field, field_validator
+        from typing import Optional, Any
+        
+        type_mapping = {
+            "string": (str, Field(default="")),
+            "integer": (Optional[int], Field(default=None)),
+            "float": (Optional[float], Field(default=None)),
+            "text": (str, Field(default="")),
+            "currency": (Optional[float], Field(default=None, description="Monetary value parsed from currency format")),
+            "percentage": (Optional[float], Field(default=None, description="Percentage value as decimal (0.25 for 25%)"))
+        }
+        
+        # Create field annotations dictionary
+        annotations = {}
+        field_defaults = {}
+        
+        for col_name, col_type in schema_info.table_schema.items():
+            python_type, field_info = type_mapping.get(col_type.lower(), (str, Field(default="")))
+            annotations[col_name] = python_type
+            field_defaults[col_name] = field_info
+        
+        # Create a base class with the static method
+        class BaseTableModel(BaseModel):
+            @staticmethod
+            def _parse_numeric_value(value: str, expected_type: str) -> Optional[float]:
+                """Parse numeric values with units (currency, percentages, etc.) into clean numbers."""
+                if not value or not value.strip():
+                    return None
+                    
+                # Clean the value
+                cleaned_value = value.strip()
+                
+                try:
+                    # Handle currency values
+                    if expected_type == "currency":
+                        # Remove currency symbols and common formatting
+                        import re
+                        # Common currency symbols: $, €, £, ¥, ₹, etc.
+                        currency_pattern = r'[\$€£¥₹₽₩¢₦₨₪₫₡₲₴₸₵₶₷₹₺₻₼₽₾₿]'
+                        cleaned_value = re.sub(currency_pattern, '', cleaned_value)
+                        # Remove commas used as thousands separators
+                        cleaned_value = cleaned_value.replace(',', '')
+                        # Remove spaces
+                        cleaned_value = cleaned_value.replace(' ', '')
+                        # Handle parentheses for negative values (accounting format)
+                        if cleaned_value.startswith('(') and cleaned_value.endswith(')'):
+                            cleaned_value = '-' + cleaned_value[1:-1]
+                        return float(cleaned_value) if cleaned_value else None
+                        
+                    # Handle percentage values
+                    elif expected_type == "percentage":
+                        if '%' in cleaned_value:
+                            cleaned_value = cleaned_value.replace('%', '').strip()
+                            # Convert percentage to decimal (25% -> 0.25)
+                            return float(cleaned_value) / 100 if cleaned_value else None
+                        else:
+                            # Assume it's already in decimal format
+                            return float(cleaned_value) if cleaned_value else None
+                            
+                    # Handle regular numeric values with potential formatting
+                    elif expected_type in ["float", "integer"]:
+                        # Remove common formatting characters
+                        import re
+                        # Remove everything except digits, decimal points, minus signs, and 'e' for scientific notation
+                        cleaned_value = re.sub(r'[^\d\.\-e]', '', cleaned_value)
+                        
+                        if expected_type == "integer":
+                            # For integers, convert to float first then to int to handle decimal formatting
+                            float_val = float(cleaned_value) if cleaned_value else None
+                            return int(float_val) if float_val is not None else None
+                        else:
+                            return float(cleaned_value) if cleaned_value else None
+                            
+                    # If not a numeric type, return None
+                    else:
+                        return None
+                        
+                except (ValueError, TypeError):
+                    return None
+        
+        # Create validators dictionary for numeric fields
+        validators = {}
+        
+        for col_name, col_type in schema_info.table_schema.items():
+            if col_type.lower() in ["currency", "percentage", "float", "integer"]:
+                # Create a closure to capture the column type
+                def make_validator(column_type: str):
+                    @field_validator(col_name, mode='before')
+                    @classmethod
+                    def validate_field(cls, v: Any) -> Any:
+                        if v is None or v == "":
+                            return None
+                        if isinstance(v, (int, float)):
+                            return v
+                        if isinstance(v, str):
+                            parsed = cls._parse_numeric_value(v, column_type)
+                            if parsed is not None:
+                                return parsed
+                            # If parsing fails, try basic float conversion
+                            try:
+                                return float(v)
+                            except (ValueError, TypeError):
+                                return None
+                        return v
+                    return validate_field
+                
+                validator_func = make_validator(col_type.lower())
+                # Use a unique name for each validator
+                validators[f'validate_{col_name.replace(" ", "_").replace("-", "_")}'] = validator_func
+        
+        # Create the model class dynamically
+        model_attrs = {
+            '__annotations__': annotations,
+            **field_defaults,
+            **validators
+        }
+        
+        # Create the final model class
+        DynamicModel = type(
+            f"{schema_info.table_name}Model",
+            (BaseTableModel,),
+            model_attrs
+        )
+        
+        return DynamicModel
+
+    def _convert_schema_to_sqlalchemy(self, schema_info: TableSchema) -> List[Column]:
+        """Convert Gemini schema to SQLAlchemy columns."""
+        type_mapping = {
+            "string": String(255),
+            "integer": Integer,
+            "float": Float,
+            "text": Text,
+            "currency": Float,  # Store currency as float (numeric value only)
+            "percentage": Float  # Store percentage as float (decimal format)
+        }
+        
+        columns = []
+        for col_name, col_type in schema_info.table_schema.items():
+            sqlalchemy_type = type_mapping.get(col_type.lower(), String(255))
+            columns.append(Column(col_name, sqlalchemy_type))
+        
+        return columns
+
+    def extract_and_store_content(self, pdf_path: str) -> Dict[str, Any]:
+        """
+        Enhanced content extraction with Gemini-powered schema inference.
+        Combines extraction and storage into a single intelligent process.
+        """
+        text_chunks = []
+        stored_tables = []
+        current_table_info: Optional[TableInfo] = None
+        
+        # Generate file hash for unique table naming
         with open(pdf_path, 'rb') as f:
             file_hash = hashlib.md5(f.read()).hexdigest()[:8]
-        table_prefix = f"pdf_{file_hash}"
 
-        logger.info(f"Starting PDF extraction for file: {pdf_path}")
+        logger.info(f"Starting enhanced PDF extraction for file: {pdf_path}")
+        print(f"\n=== Enhanced PDF Processing ===")
+        print(f"File: {Path(pdf_path).name}")
+        print(f"File Hash: {file_hash}")
+
         try:
             with pdfplumber.open(pdf_path) as pdf:
                 for page_num, page in enumerate(pdf.pages, 1):
-                    # Extract text
+                    # Extract text for chunks
                     text = page.extract_text()
                     if text:
-                        logger.debug(
-                            f"Extracted text from page {page_num}: {text[:100]}...")
                         sentences = re.split(r'(?<=[.!?])\s+', text)
                         chunk = ""
                         for sentence in sentences:
@@ -69,14 +450,12 @@ class PDFProcessor:
                         if chunk.strip():
                             text_chunks.append(chunk.strip())
 
-                    # Extract tables
+                    # Extract and process tables
                     page_tables = page.extract_tables()
-                    logger.info(
-                        f"Found {len(page_tables)} tables on page {page_num}")
+                    logger.info(f"Found {len(page_tables)} tables on page {page_num}")
+                    
                     for table_idx, table in enumerate(page_tables, 1):
                         if not table or not table[0]:
-                            logger.warning(
-                                f"Empty table {table_idx} on page {page_num}")
                             continue
 
                         cleaned_table = [
@@ -85,239 +464,260 @@ class PDFProcessor:
                         ]
 
                         if not cleaned_table:
-                            logger.warning(
-                                f"Cleaned table {table_idx} on page {page_num} is empty")
                             continue
 
                         # Check for transposition
                         if len(cleaned_table) < len(cleaned_table[0]):
-                            logger.warning(
-                                f"Possible transposed table detected on page {page_num}, table {table_idx}")
-                            cleaned_table = list(
-                                map(list, zip(*cleaned_table)))
+                            cleaned_table = list(map(list, zip(*cleaned_table)))
 
-                        # Detect if this table continues from previous page
-                        table_name = f"{table_prefix}_table_{len(tables) + 1}"
-                        if current_table and len(cleaned_table[0]) == previous_row_count:
-                            if not self._is_header_row(cleaned_table[0]):
-                                logger.debug(
-                                    f"Appending table {table_idx} on page {page_num} to current table '{table_name}'")
-                                current_table.extend(cleaned_table)
-                            else:
-                                logger.debug(
-                                    f"Skipping header row in table {table_idx} on page {page_num}")
-                                current_table.extend(cleaned_table[1:])
-                        else:
-                            if current_table:
-                                logger.info(
-                                    f"Finalizing table '{table_names[-1]}' with {len(current_table)} rows")
-                                tables.append(current_table)
-                                table_names.append(table_names[-1])
-                            current_table = cleaned_table
-                            previous_row_count = len(cleaned_table[0])
-                            table_names.append(table_name)
-                            logger.debug(
-                                f"New table '{table_name}' started on page {page_num}, table {table_idx}")
+                        print(f"\nProcessing table {table_idx} on page {page_num}")
+                        print(f"Table dimensions: {len(cleaned_table)} rows x {len(cleaned_table[0])} columns")
 
-                if current_table:
-                    logger.info(
-                        f"Finalizing last table '{table_names[-1] if table_names else table_name}' with {len(current_table)} rows")
-                    tables.append(current_table)
-                    if not table_names:
-                        table_names.append(table_name)
+                        # Check if this continues the previous table
+                        if (current_table_info and 
+                            len(cleaned_table[0]) == current_table_info.column_count):
+                            
+                            print("Checking if table continues previous one...")
+                            is_continuation = self._query_gemini_for_continuation(
+                                list(current_table_info.schema.keys()),
+                                cleaned_table
+                            )
+                            
+                            if is_continuation:
+                                print("✓ Continuing previous table")
+                                current_table_info.data.extend(cleaned_table)
+                                continue
 
-            logger.info(
-                f"Extracted {len(text_chunks)} text chunks and {len(tables)} tables")
-            print(f"\n=== PDF Extraction Summary ===")
-            print(f"File: {Path(pdf_path).name}")
-            print(f"Total Text Chunks Extracted: {len(text_chunks)}")
-            print(f"Sample Text Chunks (first 3):")
-            for i, chunk in enumerate(text_chunks[:3], 1):
-                print(f"  Chunk {i}: {chunk[:100]}...")
-            print(f"Total Tables Extracted: {len(tables)}")
-            print(f"Extracted Tables: {table_names}")
-            print("=============================\n")
+                        # Finalize previous table if exists
+                        if current_table_info:
+                            print(f"Finalizing table: {current_table_info.name}")
+                            success = self._store_table_with_schema(current_table_info)
+                            if success:
+                                stored_tables.append({
+                                    "name": current_table_info.name,
+                                    "rows": len(current_table_info.data) - 1,  # Exclude header
+                                    "description": current_table_info.description
+                                })
 
-            return {"text_chunks": text_chunks, "tables": tables, "table_names": table_names}
+                        # Process new table with Gemini
+                        print("Analyzing new table with Gemini...")
+                        context_text = self._get_context_text(pdf_path, page_num, table_idx)
+                        schema_info = self._query_gemini_for_schema(cleaned_table, context_text, file_hash)
+                        
+                        print(f"✓ Gemini analysis complete:")
+                        print(f"  Table name: {schema_info.table_name}")
+                        print(f"  Schema: {schema_info.table_schema}")
+                        print(f"  Description: {schema_info.description}")
+
+                        # Save schema to file
+                        self.schemas[schema_info.table_name] = {
+                            "schema": schema_info.table_schema,
+                            "description": schema_info.description,
+                            "file_hash": file_hash,
+                            "created_at": pd.Timestamp.now().isoformat()
+                        }
+                        self._save_schemas()
+
+                        # Create new table info
+                        current_table_info = TableInfo(
+                            name=schema_info.table_name,
+                            schema=schema_info.table_schema,
+                            description=schema_info.description,
+                            data=cleaned_table,
+                            column_count=len(cleaned_table[0])
+                        )
+
+                # Finalize the last table
+                if current_table_info:
+                    print(f"Finalizing last table: {current_table_info.name}")
+                    success = self._store_table_with_schema(current_table_info)
+                    if success:
+                        stored_tables.append({
+                            "name": current_table_info.name,
+                            "rows": len(current_table_info.data) - 1,
+                            "description": current_table_info.description
+                        })
+
+            print(f"\n=== Processing Complete ===")
+            print(f"Text chunks extracted: {len(text_chunks)}")
+            print(f"Tables stored: {len(stored_tables)}")
+            for table in stored_tables:
+                print(f"  - {table['name']}: {table['rows']} rows - {table['description']}")
+            print("===============================\n")
+
+            return {
+                "text_chunks": text_chunks,
+                "tables_info": stored_tables,
+                "schemas_saved": len(stored_tables)
+            }
 
         except Exception as e:
-            logger.error(f"PDF extraction failed: {str(e)}")
-            print(f"Error: Failed to extract content from PDF: {str(e)}")
-            raise ValueError(f"PDF extraction error: {str(e)}")
+            logger.error(f"Enhanced PDF extraction failed: {str(e)}")
+            print(f"Error: Enhanced PDF extraction failed: {str(e)}")
+            raise ValueError(f"Enhanced PDF extraction error: {str(e)}")
 
-    def _is_header_row(self, row: List[str]) -> bool:
-        """Determine if a row is likely a header based on content."""
-        is_header = all(cell.strip() and not cell.replace(
-            ".", "").isdigit() for cell in row if cell)
-        logger.debug(f"Row {row[:50]} is {'header' if is_header else 'data'}")
-        return is_header
+    def _store_table_with_schema(self, table_info: TableInfo) -> bool:
+        """Store table using Gemini-generated schema and Pydantic validation with enhanced numeric parsing."""
+        try:
+            print(f"\nStoring table: {table_info.name}")
+            
+            # Create Pydantic model for validation
+            schema_info = TableSchema(
+                table_name=table_info.name,
+                table_schema=table_info.schema,
+                description=table_info.description
+            )
+            pydantic_model = self._create_pydantic_model(schema_info)
+            
+            # Create SQLAlchemy table
+            columns = self._convert_schema_to_sqlalchemy(schema_info)
+            table = Table(table_info.name, self.metadata, *columns)
+            self.metadata.create_all(self.engine)
+            
+            print(f"Created table with schema: {table_info.schema}")
 
-    def infer_schema(self, table_data: List[List[str]], table_name: str) -> tuple[List[Column], List[str]]:
-        """Infer schema for a single table dynamically, without predefined columns."""
-        if not table_data or not table_data[0]:
-            logger.error(
-                f"Invalid table data provided for schema inference for {table_name}")
-            print(f"\n=== Schema Inference for Table '{table_name}' ===")
-            print("Error: Invalid or empty table data")
-            print("================================\n")
-            raise ValueError("Invalid table data")
-
-        headers = table_data[0]
-        logger.info(
-            f"Inferring schema for table '{table_name}' with headers: {headers}")
-        print(f"\n=== Schema Inference for Table '{table_name}' ===")
-        print(f"Headers: {headers}")
-        print(f"Number of Rows (excluding header): {len(table_data) - 1}")
-
-        df = pd.DataFrame(table_data[1:], columns=headers)
-        columns = []
-        seen = set()
-
-        for idx, col in enumerate(df.columns):
-            clean_col = str(col).lower().replace(" ", "_").replace(
-                ".", "_").replace(",", "").replace("`", "")
-            if not clean_col or clean_col in ["table", "index", "select", "from"]:
-                clean_col = f"col_{idx}"
-
-            count = 1
-            original = clean_col
-            while clean_col in seen:
-                clean_col = f"{original}_{count}"
-                count += 1
-            seen.add(clean_col)
-
-            sample = df[col].dropna().head(5)
-            print(f"\nColumn: {clean_col}")
-            print(f"Sample Data: {list(sample)}")
-
-            if sample.empty:
-                col_type = String(255)
-                print(f"Inferred Type: String(255) (empty sample)")
-            else:
+            # Process and validate data with enhanced numeric parsing
+            headers = list(table_info.schema.keys())
+            data_rows = table_info.data[1:]  # Skip header row
+            
+            validated_rows = []
+            parsing_stats = {"success": 0, "failed": 0, "warnings": []}
+            
+            for row_idx, row in enumerate(data_rows):
                 try:
-                    pd.to_numeric(sample, errors='raise')
-                    if all(sample.apply(lambda x: float(x).is_integer() if pd.notnull(x) else True)):
-                        col_type = Integer
-                        print(
-                            f"Inferred Type: Integer (all values are whole numbers)")
-                    else:
-                        col_type = Float
-                        print(f"Inferred Type: Float (contains decimal values)")
-                except (ValueError, TypeError):
-                    col_type = String(255)
-                    print(f"Inferred Type: String(255) (non-numeric values)")
+                    # Ensure row length matches headers
+                    row = row + [""] * (len(headers) - len(row)) if len(row) < len(headers) else row[:len(headers)]
+                    
+                    # Pre-process data with custom parsing for numeric types
+                    processed_row_dict = {}
+                    for header, value in zip(headers, row):
+                        col_type = table_info.schema.get(header, "string").lower()
+                        cleaned_value = value.strip() if value else ""
+                        
+                        if col_type in ["currency", "percentage", "float", "integer"] and cleaned_value:
+                            # Use enhanced numeric parsing
+                            parsed_value = self._parse_numeric_value(cleaned_value, col_type)
+                            if parsed_value is not None:
+                                processed_row_dict[header] = parsed_value
+                                if row_idx < 5:  # Log first 5 successful conversions for debugging
+                                    print(f"  ✓ Parsed '{cleaned_value}' → {parsed_value} ({col_type})")
+                            else:
+                                # If enhanced parsing fails, try basic conversion
+                                try:
+                                    if col_type == "integer":
+                                        processed_row_dict[header] = int(float(cleaned_value.replace(',', '')))
+                                    else:
+                                        processed_row_dict[header] = float(cleaned_value.replace(',', ''))
+                                    parsing_stats["warnings"].append(f"Row {row_idx+1}: Basic parsing used for '{cleaned_value}' in {header}")
+                                except (ValueError, TypeError):
+                                    processed_row_dict[header] = None
+                                    parsing_stats["warnings"].append(f"Row {row_idx+1}: Failed to parse '{cleaned_value}' in {header}, set to NULL")
+                        else:
+                            # Non-numeric types or empty values
+                            processed_row_dict[header] = cleaned_value if cleaned_value else None
+                    
+                    # Validate with Pydantic (should pass since we pre-processed)
+                    try:
+                        validated_row = pydantic_model(**processed_row_dict)
+                        validated_rows.append(validated_row.model_dump())
+                        parsing_stats["success"] += 1
+                    except Exception as pydantic_error:
+                        logger.warning(f"Row {row_idx + 1} Pydantic validation failed: {pydantic_error}")
+                        parsing_stats["failed"] += 1
+                        # Try to salvage the row by setting problematic fields to None
+                        salvaged_row = {}
+                        for header in headers:
+                            try:
+                                # Test each field individually
+                                test_dict = {header: processed_row_dict.get(header)}
+                                pydantic_model(**{h: None for h in headers if h != header}, **test_dict)
+                                salvaged_row[header] = processed_row_dict.get(header)
+                            except:
+                                salvaged_row[header] = None
+                                parsing_stats["warnings"].append(f"Row {row_idx+1}: Set {header} to NULL due to validation error")
+                        
+                        try:
+                            validated_row = pydantic_model(**salvaged_row)
+                            validated_rows.append(validated_row.model_dump())
+                            parsing_stats["success"] += 1
+                        except:
+                            parsing_stats["failed"] += 1
+                            continue
+                    
+                except Exception as e:
+                    logger.warning(f"Row {row_idx + 1} processing failed: {e}")
+                    parsing_stats["failed"] += 1
+                    continue
 
-            columns.append(Column(clean_col, col_type))
-            logger.info(
-                f"Inferred column {clean_col}: {col_type.__class__.__name__}")
-            print(
-                f"Final Column Name: {clean_col}, Type: {col_type.__class__.__name__}")
+            # Report parsing statistics
+            total_rows = len(data_rows)
+            print(f"\nParsing Statistics:")
+            print(f"  Total rows processed: {total_rows}")
+            print(f"  Successfully validated: {parsing_stats['success']}")
+            print(f"  Failed validation: {parsing_stats['failed']}")
+            print(f"  Success rate: {(parsing_stats['success']/total_rows*100):.1f}%")
+            
+            if parsing_stats["warnings"]:
+                print(f"  Warnings: {len(parsing_stats['warnings'])}")
+                # Show first 5 warnings
+                for warning in parsing_stats["warnings"][:5]:
+                    print(f"    - {warning}")
+                if len(parsing_stats["warnings"]) > 5:
+                    print(f"    ... and {len(parsing_stats['warnings']) - 5} more warnings")
 
-        schema_str = [
-            f"{c.name}: {c.type.__class__.__name__}" for c in columns]
-        print(f"\nFinal Schema for '{table_name}':")
-        print(schema_str)
-        print("================================\n")
+            # Insert validated data
+            if validated_rows:
+                with self.engine.connect() as conn:
+                    conn.execute(insert(table), validated_rows)
+                    conn.commit()
+                
+                print(f"✓ Successfully stored {len(validated_rows)} validated rows")
+                logger.info(f"Successfully stored {len(validated_rows)} rows in {table_info.name}")
+                return True
+            else:
+                print("✗ No valid rows to store")
+                logger.warning(f"No valid rows to store in {table_info.name}")
+                return False
 
-        return columns, schema_str
+        except Exception as e:
+            logger.error(f"Error storing table {table_info.name}: {str(e)}")
+            print(f"✗ Error storing table {table_info.name}: {str(e)}")
+            return False
+
+    def get_stored_schemas(self) -> Dict:
+        """Get all stored table schemas."""
+        return self.schemas
+
+    def get_table_info(self, table_name: str) -> Optional[Dict]:
+        """Get information about a specific table."""
+        return self.schemas.get(table_name)
+
+    # Backward compatibility methods
+    def extract_content(self, pdf_path: str) -> Dict[str, Any]:
+        """Legacy method for backward compatibility."""
+        result = self.extract_and_store_content(pdf_path)
+        # Convert to legacy format
+        return {
+            "text_chunks": result["text_chunks"],
+            "tables": [],  # Tables are now stored directly
+            "table_names": [info["name"] for info in result["tables_info"]]
+        }
 
     def store_table(self, table_data: List[List[str]], table_name: str) -> bool:
-        """Store a table in MySQL RDS using SQLAlchemy insert construct."""
-        if not table_data or not table_data[0]:
-            logger.error(f"No valid data to store for table {table_name}")
-            print(f"Error: No valid data to store for table {table_name}")
+        """Legacy method for backward compatibility."""
+        logger.warning("Using legacy store_table method. Consider using extract_and_store_content instead.")
+        
+        if not table_data:
             return False
-
-        try:
-            # Sanitize table name
-            table_name = table_name.replace(
-                " ", "_").replace(".", "_").replace("`", "")
-            base_table_name = table_name
-            count = 1
-            while self._table_exists(table_name):
-                table_name = f"{base_table_name}_{count}"
-                count += 1
-            logger.info(f"Using table name: {table_name}")
-            print(f"\n=== Storing Table '{table_name}' ===")
-
-            # Infer schema
-            columns, schema_str = self.infer_schema(table_data, table_name)
-            table = Table(table_name, self.metadata, *columns)
-            self.metadata.create_all(self.engine)
-            logger.info(
-                f"Created table {table_name} with schema: {schema_str}")
-            print(f"Table Created with Schema: {schema_str}")
-
-            # Log data to be inserted
-            data_rows = table_data[1:]  # Skip header
-            logger.info(
-                f"Preparing to insert {len(data_rows)} rows into {table_name}")
-            print(f"Number of Rows to Insert: {len(data_rows)}")
-            print(
-                f"Sample Data (first 2 rows): {data_rows[:2] if data_rows else 'No data'}")
-            print(
-                f"Raw Table Data (first 3 rows including header): {table_data[:3] if table_data else 'Empty'}")
-
-            # Collect rows for insertion
-            rows_to_insert = []
-            for row_idx, row in enumerate(data_rows):
-                # Ensure row length matches headers
-                row = row + [""] * (len(columns) - len(row)
-                                    ) if len(row) < len(columns) else row[:len(columns)]
-                # Convert data types
-                converted_row = {}
-                for col, val in zip(columns, row):
-                    if isinstance(col.type, Integer):
-                        try:
-                            converted_row[col.name] = int(
-                                float(val)) if val.strip() else None
-                        except (ValueError, TypeError) as e:
-                            logger.warning(
-                                f"Row {row_idx+1}: Failed to convert value '{val}' to Integer for column {col.name}: {e}")
-                            converted_row[col.name] = None
-                    elif isinstance(col.type, Float):
-                        try:
-                            converted_row[col.name] = float(
-                                val) if val.strip() else None
-                        except (ValueError, TypeError) as e:
-                            logger.warning(
-                                f"Row {row_idx+1}: Failed to convert value '{val}' to Float for column {col.name}: {e}")
-                            converted_row[col.name] = None
-                    else:
-                        converted_row[col.name] = val if val.strip() else None
-                rows_to_insert.append(converted_row)
-
-            # Insert data using SQLAlchemy insert construct
-            if rows_to_insert:
-                with self.engine.connect() as conn:
-                    conn.execute(insert(table), rows_to_insert)
-                    conn.commit()
-                logger.info(
-                    f"Successfully inserted {len(rows_to_insert)} rows into {table_name}")
-                print(
-                    f"Successfully inserted {len(rows_to_insert)} rows into '{table_name}'")
-            else:
-                logger.warning(f"No valid rows to insert into {table_name}")
-                print(f"Warning: No valid rows to insert into '{table_name}'")
-
-            print("================================\n")
-            return True
-
-        except SQLAlchemyError as e:
-            logger.error(f"SQL error storing table {table_name}: {str(e)}")
-            print(f"Error: SQL error storing table {table_name}: {str(e)}")
-            return False
-        except Exception as e:
-            logger.error(f"Error storing table {table_name}: {str(e)}")
-            print(f"Error: Failed to store table {table_name}: {str(e)}")
-            return False
-
-    def _table_exists(self, table_name: str) -> bool:
-        """Check if a table exists in the database."""
-        try:
-            Table(table_name, self.metadata, autoload_with=self.engine)
-            logger.debug(f"Table {table_name} exists")
-            return True
-        except SQLAlchemyError:
-            logger.debug(f"Table {table_name} does not exist")
-            return False
+            
+        # Create basic table info for legacy support
+        basic_schema = {f"col_{i}": "string" for i in range(len(table_data[0]))}
+        table_info = TableInfo(
+            name=table_name,
+            schema=basic_schema,
+            description="Legacy table",
+            data=table_data,
+            column_count=len(table_data[0])
+        )
+        
+        return self._store_table_with_schema(table_info)
