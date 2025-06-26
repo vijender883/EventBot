@@ -1,6 +1,6 @@
 # EventBot
 
-A PDF document assistant with a FastAPI-based backend and a Streamlit-based frontend. The backend integrates with Google Gemini AI and Pinecone vector database, allowing users to upload PDF files and ask questions about their content using natural language via the frontend interface. Event bot(https://eventbot-pinecone-db.streamlit.app/)
+A PDF document assistant with a FastAPI-based backend and a Streamlit-based frontend. The backend integrates with Google Gemini AI, Pinecone vector database, and MySQL. It allows users to upload PDF files (extracting text for vector search and tables for structured data querying) and ask questions about their content using natural language via the frontend interface. Event bot(https://eventbot-pinecone-db.streamlit.app/)
 
 ## 📖 Table of Contents
 
@@ -28,10 +28,11 @@ A PDF document assistant with a FastAPI-based backend and a Streamlit-based fron
 
 ## 🚀 Features
 
-- **PDF Document Processing**: Upload and process PDF files into searchable vectors.
-- **AI-Powered Q&A**: Ask questions about uploaded PDFs using Google Gemini AI.
-- **Vector Search**: Efficient document retrieval using Pinecone vector database.
-- **Resume Support**: Special handling for resume/CV documents (filename-based user ID extraction).
+- **Comprehensive PDF Document Processing**: Upload PDF files, extracting both text (for semantic search) and tables (for structured data storage in MySQL).
+- **Hybrid AI-Powered Q&A**: Ask questions that can be answered by retrieving unstructured text (via RAG with Google Gemini & Pinecone) or querying structured table data.
+- **Intelligent Response Combination**: An agentic system determines the best way to answer a query and combines information from different sources into a coherent response.
+- **Vector Search**: Efficient document retrieval using Pinecone vector database for text segments.
+- **Relational Data Storage**: Extracted tables from PDFs are stored in a MySQL database, enabling structured queries.
 - **Streamlit Frontend**: User-friendly interface for uploading PDFs and interacting with the chatbot.
 - **RESTful API**: Clean REST endpoints for the backend, consumed by the frontend.
 - **Health Monitoring**: Built-in health checks and logging for the backend.
@@ -41,6 +42,7 @@ A PDF document assistant with a FastAPI-based backend and a Streamlit-based fron
 - Python 3.8 or higher
 - Google AI Studio account (for Gemini API key)
 - Pinecone account (for Pinecone API key and index)
+- MySQL compatible database (e.g., local MySQL, AWS RDS)
 - Git
 
 ## 🛠️ Installation & Setup
@@ -71,14 +73,14 @@ For a quick start, follow these steps:
     pip install -r requirements.txt
     ```
 
-For comprehensive instructions, including API key setup, environment configuration, running the application, deployment, and troubleshooting, please see our [Detailed Installation and Setup Guide](docs/INSTALLATION.md).
+For comprehensive instructions, including API key setup, environment configuration (especially `DATABASE_URL`), running the application, deployment, and troubleshooting, please see our [Detailed Installation and Setup Guide](docs/INSTALLATION.md).
 
 ### Running the Backend
 
 To run the FastAPI backend server:
 ```bash
 make run-backend
-# Alternatively: uvicorn app:app --reload (or similar command based on your app structure)
+# Alternatively: uvicorn app:app --reload
 ```
 The backend will typically start on `http://localhost:8000` (FastAPI's default) or `http://localhost:5000` if configured.
 
@@ -86,7 +88,7 @@ The backend will typically start on `http://localhost:8000` (FastAPI's default) 
 
 To run the Streamlit frontend application:
 1.  Ensure the backend is running.
-2.  Set the `ENDPOINT` environment variable if your backend is not on `http://localhost:5000`. For local development, you can add `ENDPOINT=http://localhost:5000` to your `.env` file.
+2.  Set the `ENDPOINT` environment variable if your backend is not on `http://localhost:5000`. For local development, you can add `ENDPOINT=http://localhost:5000` (or your backend's port) to your `.env` file.
 ```bash
 make run-frontend
 # Alternatively: streamlit run src/frontend/streamlit_app.py
@@ -99,12 +101,10 @@ The API routes are primarily defined in `src/backend/routes/chat.py`. The root `
 
 | Endpoint     | Method | Description                                          | Request Body (Format)         | Success Response (JSON Example)                                                                                                |
 |--------------|--------|------------------------------------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `/`          | GET    | Basic API information and available endpoints.       | N/A                           | `{"message": "EventBot API", "version": "1.0.0", "endpoints": {"/health": "GET - Health check", ...}}` (from `chat.py` if routed, or `app.py`'s version) |
-| `/health`    | GET    | Detailed health check of backend services.           | N/A                           | `{"status": "success", "health": {"gemini_api": true, ...}, "healthy": true}`                                                   |
-| `/uploadpdf` | POST   | Uploads a PDF file for processing and vectorization. | FormData: `file` (PDF file)   | `{"success": true, "message": "PDF 'name.pdf' uploaded...", "filename": "name.pdf"}`                                           |
-| `/answer`    | POST   | Asks a question about the processed PDF content.     | JSON: `{"query": "Your question?"}` | `{"answer": "AI generated answer."}`                                                                                           |
-
-*Note: The root endpoint `/` defined in `app.py` provides a simple welcome message. The one in `chat.py` (if `chat_bp` is mounted at root) offers more detail. The table reflects the more detailed one for completeness.*
+| `/`          | GET    | Basic API information and available endpoints.       | N/A                           | `{"message": "PDF Assistant Chatbot API", "version": "1.0.0", "endpoints": {"/health": "GET - Health check", ...}}` (from `chat.py`) |
+| `/health`    | GET    | Detailed health check of backend services.           | N/A                           | `{"status": "healthy", "services": {"manager_agent_health": {...}}, "overall_health": true}`                                   |
+| `/uploadpdf` | POST   | Uploads a PDF file for processing, text vectorization (Pinecone), and table storage (MySQL). | FormData: `file` (PDF file)   | `{"success": true, "message": "PDF processed...", "filename": "name.pdf", "tables_stored": 1, "text_chunks_stored": 10}`            |
+| `/answer`    | POST   | Asks a question about the processed PDF content.     | JSON: `{"query": "Your question?"}` | `{"answer": "AI generated answer.", "success": true, "error": null}`                                                                                           |
 
 For deployment instructions, see the [Detailed Installation and Setup Guide](docs/INSTALLATION.md#-deploy-to-rendercom).
 
@@ -113,49 +113,66 @@ For deployment instructions, see the [Detailed Installation and Setup Guide](doc
 ### Project Structure
 ```
 EventBot/
-├── .env                   # Local environment variables (gitignored)
-├── .env.template          # Template for .env file
-├── .git/                  # Git version control directory
-├── .gitignore             # Specifies intentionally untracked files for Git
-├── README.md              # This guide
-├── Makefile               # Defines common tasks like running, testing, linting
-├── app.py                 # Main FastAPI application entry point for the backend (often named main.py or app.py)
-├── requirements.txt       # Python package dependencies for both backend and frontend
-├── requirements-dev.txt   # Development-specific dependencies (testing, linting)
-├── start.sh               # Shell script for starting the backend application (e.g., via Uvicorn with Gunicorn workers)
-├── src/                   # Main source code directory
-│   ├── backend/           # Source code for the FastAPI backend
-│   │   ├── __init__.py
-│   │   ├── agents/
-│   │   │   ├── base.py
-│   │   │   └── rag_agent.py
-│   │   ├── config.py
-│   │   ├── routes/
-│   │   │   ├── __init__.py
-│   │   │   └── chat.py
-│   │   ├── services/
-│   │   │   └── orchestrator.py
-│   │   └── utils/
-│   │       └── helper.py
-│   └── frontend/          # Source code for the Streamlit frontend
-│       └── streamlit_app.py # Main Streamlit application file
-└── tests/                 # Automated tests (primarily for the backend)
-    ├── conftest.py
-    ├── test_agents/
-    └── test_routes/
+├── .env                           # Local environment variables (gitignored)
+├── .env.template                  # Template for .env file
+├── .git/                          # Git version control directory
+├── .gitignore                     # Specifies intentionally untracked files for Git
+├── README.md                      # This guide
+├── Makefile                       # Defines common tasks like running, testing, linting
+├── app.py                         # Main FastAPI application entry point
+├── requirements.txt               # Python package dependencies
+├── requirements-dev.txt           # Development-specific dependencies
+├── start.sh                       # Script for starting backend
+├── src/                           # Main source code directory
+│   ├── backend/                   # Source code for the FastAPI backend
+│   │   ├── __init__.py            # Package initializer
+│   │   ├── agents/                # Houses different agent implementations
+│   │   │   ├── base.py            # Defines a base class for agents
+│   │   │   ├── combiner_agent.py  # Agent for combining responses
+│   │   │   ├── manager_agent.py   # Agent for orchestrating query processing (uses LangGraph)
+│   │   │   └── rag_agent.py       # Implements the RAG-based chatbot logic (ChatbotAgent)
+│   │   ├── config.py              # Centralized backend application configuration
+│   │   ├── models.py              # Pydantic models for API requests/responses
+│   │   ├── routes/                # Defines API endpoints
+│   │   │   ├── __init__.py        # Router package initializer
+│   │   │   └── chat.py            # Chat-related API endpoint definitions
+│   │   ├── services/              # Service layer
+│   │   │   ├── __init__.py        # Service package initializer
+│   │   │   ├── embedding_service.py # Handles text embeddings and Pinecone storage
+│   │   │   └── orchestrator.py    # Orchestrates interactions with ManagerAgent
+│   │   ├── test_manager_agent.py  # Test script for ManagerAgent (consider moving to tests/)
+│   │   └── utils/                 # Backend utility functions and helpers
+│   │       ├── __init__.py        # Utilities package initializer
+│   │       ├── helper.py          # Miscellaneous helper functions
+│   │       ├── pdf_processor.py   # PDF parsing and MySQL table storage
+│   │       └── upload_pdf.py      # PDF upload handling utilities
+│   └── frontend/                  # Source code for the Streamlit frontend
+│       └── streamlit_app.py       # Main Streamlit application file
+├── tests/                         # Directory for automated tests
+│   ├── conftest.py
+│   ├── test_agents/
+│   │   └── test_rag_agent.py      # Example test for RAG agent
+│   └── test_routes/
+│       └── test_chat_routes.py    # Example test for chat routes
 ```
 
 ### Key Components
 
 **Backend:**
--   **`app.py`**: Initializes the FastAPI app, includes routers, and defines the root (`/`) endpoint for the backend. (Filename might be `main.py`)
--   **`src/backend/routes/chat.py`**: Contains the FastAPI APIRouter for core API endpoints: `/health`, `/uploadpdf`, and `/answer`.
--   **`src/backend/agents/rag_agent.py`**: Implements the core RAG (Retrieval Augmented Generation) logic, including PDF processing, vector embedding, and question answering using Gemini and Pinecone.
--   **`src/backend/services/orchestrator.py`**: Acts as a layer between API routes and the `RAGAgent`.
--   **`src/backend/config.py`**: Manages application configuration, loading settings from environment variables.
+-   **`app.py`**: Initializes the FastAPI app, loads configuration, sets up the `Orchestrator` (which initializes agents), and includes API routers.
+-   **`src/backend/routes/chat.py`**: Defines API endpoints (`/health`, `/uploadpdf`, `/answer`) and delegates requests to appropriate handlers (e.g., `Orchestrator` for Q&A, `upload_pdf` util for uploads).
+-   **`src/backend/services/orchestrator.py`**: Central coordinator that uses `ManagerAgent` for processing queries.
+-   **`src/backend/agents/manager_agent.py`**: Core agent using LangGraph. Analyzes queries, routes them to table or RAG processing (using `ChatbotAgent`), and combines results with `CombinerAgent`.
+-   **`src/backend/agents/rag_agent.py` (Class `ChatbotAgent`)**: Specialized agent for RAG, performing similarity search in Pinecone and generating answers with Gemini.
+-   **`src/backend/agents/combiner_agent.py`**: Merges responses from different sources into a single, coherent answer using an LLM.
+-   **`src/backend/services/embedding_service.py`**: Manages text embedding generation (Gemini) and storage/retrieval in Pinecone.
+-   **`src/backend/utils/pdf_processor.py`**: Extracts text and tables from PDFs. Stores table data in MySQL.
+-   **`src/backend/utils/upload_pdf.py`**: Handles the PDF upload process, coordinating `PDFProcessor` and `EmbeddingService`.
+-   **`src/backend/config.py`**: Manages application configuration from environment variables.
+-   **`src/backend/models.py`**: Contains Pydantic models for API request/response validation.
 
 **Frontend:**
--   **`src/frontend/streamlit_app.py`**: A Streamlit application providing the user interface. It interacts with the backend API to upload PDFs and get answers to questions.
+-   **`src/frontend/streamlit_app.py`**: A Streamlit application providing the user interface. It interacts with the backend API.
 
 ### Environment Variables
 
@@ -165,13 +182,15 @@ The application uses environment variables for configuration. These are typicall
 -   `GEMINI_API_KEY`: Your Google Gemini API key.
 -   `PINECONE_API_KEY`: Your Pinecone API key.
 -   `PINECONE_INDEX_NAME`: The name of your Pinecone index.
+-   `PINECONE_DIMENSION`: The dimension of vectors for Pinecone (e.g., 768 for `models/embedding-001`).
 -   `PINECONE_CLOUD`: The cloud provider for your Pinecone index (e.g., `aws`).
 -   `PINECONE_REGION`: The region of your Pinecone index (e.g., `us-east-1`).
--   `APP_ENV`: Set to `development` or `production`. This variable typically controls debug mode and other environment-specific settings. (Formerly `FLASK_ENV`)
--   `PORT`: Port for the backend server (defaults to `8000` for Uvicorn/FastAPI, but can be `5000` if configured).
+-   `DATABASE_URL`: Connection string for your MySQL database (e.g., `mysql+mysqlconnector://user:password@host:port/database`). **This is new and critical for table storage.**
+-   `APP_ENV`: Set to `development` or `production`.
+-   `PORT`: Port for the backend server (defaults to `8000` or `5000`).
 
 **Frontend Variables:**
--   `ENDPOINT`: The URL of the backend API. For local development, this would typically be `http://localhost:5000`.
+-   `ENDPOINT`: The URL of the backend API (e.g., `http://localhost:5000`).
 
 ## 🧪 Running Tests
 
@@ -202,26 +221,27 @@ For more verbose error output locally:
 
 ### Health Checks
 
-The `/health` endpoint (see [API Endpoints](#-api-endpoints)) provides detailed status of backend components. Regularly polling this endpoint can help ensure system availability.
+The `/health` endpoint (see [API Endpoints](#-api-endpoints)) provides detailed status of backend components, including the different agents. Regularly polling this endpoint can help ensure system availability.
 
 ### Logs
 
--   **Local Development**: Logs are output to the console where `python app.py` is running. Adjust `LOG_LEVEL` in `.env` for desired verbosity.
+-   **Local Development**: Logs are output to the console where `uvicorn app:app` is running. Adjust `LOG_LEVEL` in `.env` for desired verbosity.
 -   **Render Deployment**: Access and monitor logs via the Render dashboard for your service. This is crucial for diagnosing issues in the production environment.
 
 Key information to look for in logs:
--   Successful/failed PDF uploads and processing durations.
--   Question answering request details.
--   Errors from external services (Gemini, Pinecone).
+-   Successful/failed PDF uploads and processing durations (including table and text chunk counts).
+-   Question answering request details, including routing decisions by `ManagerAgent`.
+-   Errors from external services (Gemini, Pinecone, MySQL).
 -   Any unexpected application exceptions or tracebacks.
 
 ## 🔒 Security
 
--   **API Keys**: Handled via environment variables (`.env` locally, Render's environment settings). Never hardcode keys. Ensure `.env` is in `.gitignore`.
+-   **API Keys & Database Credentials**: Handled via environment variables (`.env` locally, Render's environment settings). Never hardcode credentials. Ensure `.env` is in `.gitignore`.
 -   **File Uploads**:
     *   `werkzeug.utils.secure_filename` is used to sanitize filenames.
     *   File type and size are validated as per `ALLOWED_EXTENSIONS` and `MAX_FILE_SIZE` in the app configuration.
--   **Input Validation**: Basic validation for presence of query in `/answer` and file in `/uploadpdf`. Sensitive inputs should always be validated and sanitized.
+-   **Input Validation**: Pydantic models (`src/backend/models.py`) are used for request validation in API endpoints.
+-   **SQL Injection**: Use of SQLAlchemy ORM or parameterized queries by `PDFProcessor` helps mitigate SQL injection risks when interacting with MySQL. Ensure any direct SQL construction is done safely.
 -   **CORS**: FastAPI handles CORS through `CORSMiddleware`. Ensure it's configured securely, especially in production, by specifying allowed origins, methods, and headers. For example:
     ```python
     from fastapi.middleware.cors import CORSMiddleware
