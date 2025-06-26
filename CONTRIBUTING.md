@@ -1,6 +1,6 @@
-# Contributing to PDF Assistant Chatbot
+# Contributing to EventBot
 
-We welcome contributions to the PDF Assistant Chatbot! Whether it's a new feature, a bug fix, or an improvement to the documentation, your help is appreciated.
+We welcome contributions to EventBot! Whether it's a new feature, a bug fix, or an improvement to the documentation, your help is appreciated.
 
 Please take a moment to review this document to understand how to contribute effectively.
 
@@ -23,10 +23,10 @@ Please take a moment to review this document to understand how to contribute eff
 
 #### 1. Fork the Repository
 
-First, fork the `Chatbot_Pinecone_flask_backend` repository to your GitHub account.
+First, fork the `EventBot` repository to your GitHub account.
 
 #### 2. Clone Your Fork
 
 ```bash
-git clone [https://github.com/YOUR_USERNAME/Chatbot_Pinecone_flask_backend.git](https://github.com/YOUR_USERNAME/Chatbot_Pinecone_flask_backend.git)
-cd Chatbot_Pinecone_flask_backend
+git clone [https://github.com/YOUR_USERNAME/EventBot.git](https://github.com/YOUR_USERNAME/EventBot.git)
+cd EventBot
