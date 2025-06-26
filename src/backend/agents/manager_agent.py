@@ -1,13 +1,20 @@
-# src/backend/agents/manager_agent.py
-
 import logging
+import json
+import mysql.connector
 from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
+import os
+try:
+    from urllib.parse import urlparse, parse_qs
+except ImportError as e:
+    logging.error(f"Failed to import urllib.parse: {e}")
+    raise
 
 logger = logging.getLogger(__name__)
+
 
 class AgentState(BaseModel):
     """State object for the LangGraph workflow"""
@@ -17,15 +24,16 @@ class AgentState(BaseModel):
     needs_rag: bool = False
     table_response: str = ""
     rag_response: str = ""
-    
+
     class Config:
         arbitrary_types_allowed = True
+
 
 class ManagerAgent:
     """
     Manager Agent using LangGraph to orchestrate between Table and RAG nodes
     """
-    
+
     def __init__(self, gemini_api_key: str, chatbot_agent=None):
         """Initialize the Manager Agent with Gemini LLM and optional ChatbotAgent"""
         self.llm = ChatGoogleGenerativeAI(
@@ -34,28 +42,29 @@ class ManagerAgent:
             temperature=0.1
         )
         self.chatbot_agent = chatbot_agent
-        
+
         # Initialize Combiner Agent
         try:
             from .combiner_agent import CombinerAgent
             self.combiner_agent = CombinerAgent(gemini_api_key)
-            logger.info("Combiner Agent initialized successfully in Manager Agent")
+            logger.info(
+                "Combiner Agent initialized successfully in Manager Agent")
         except Exception as e:
             logger.error(f"Failed to initialize Combiner Agent: {e}")
             self.combiner_agent = None
-        
+
         self.workflow = self._create_workflow()
-    
+
     def _create_workflow(self) -> StateGraph:
         """Create the LangGraph workflow"""
         workflow = StateGraph(AgentState)
-        
+
         # Add nodes
         workflow.add_node("manager", self._manager_node)
         workflow.add_node("table", self._table_node)
         workflow.add_node("rag", self._rag_node)
         workflow.add_node("combiner", self._combiner_node)
-        
+
         # Add edges
         workflow.set_entry_point("manager")
         workflow.add_conditional_edges(
@@ -63,12 +72,12 @@ class ManagerAgent:
             self._decide_route,
             {
                 "table_only": "table",
-                "rag_only": "rag", 
+                "rag_only": "rag",
                 "both": "table",  # Start with table, then go to RAG
                 "end": END
             }
         )
-        
+
         workflow.add_conditional_edges(
             "table",
             self._after_table_route,
@@ -78,37 +87,37 @@ class ManagerAgent:
                 "end": END
             }
         )
-        
+
         workflow.add_edge("rag", "combiner")
         workflow.add_edge("combiner", END)
-        
+
         return workflow.compile()
-    
+
     def _manager_node(self, state: AgentState) -> Dict[str, Any]:
         """Manager node that analyzes the query and decides routing"""
         print(f"[DEBUG] Manager Node called with query: {state.query}")
-        
+
         system_prompt = """
         You are a query analyzer. Analyze the user query and determine if it needs:
         1. "table" - for data queries about statistics, numbers, calculations from structured data
-        2. "rag" - for general knowledge questions about people, facts, descriptions  
+        2. "rag" - for general knowledge questions about people, facts, descriptions
         3. "both" - for queries that need both data analysis and general knowledge
-        
+
         Keywords that suggest table queries: "how many", "statistics", "count", "total", "average", "goals scored", "data", "numbers"
         Keywords that suggest RAG queries: "tell me about", "who is", "biography", "background", "describe"
-        
+
         Respond with only one word: "table", "rag", or "both"
         """
-        
+
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=f"Query: {state.query}")
         ]
-        
+
         try:
             response = self.llm.invoke(messages)
             decision = response.content.strip().lower()
-            
+
             # Set flags based on decision
             if decision == "table":
                 state.needs_table = True
@@ -123,27 +132,162 @@ class ManagerAgent:
                 # Default to RAG for unknown cases
                 state.needs_table = False
                 state.needs_rag = True
-            
-            print(f"[DEBUG] Manager decision: {decision} (table: {state.needs_table}, rag: {state.needs_rag})")
-            
+
+            print(
+                f"[DEBUG] Manager decision: {decision} (table: {state.needs_table}, rag: {state.needs_rag})")
+
         except Exception as e:
             logger.error(f"Error in manager node: {e}")
             # Default to RAG on error
             state.needs_table = False
             state.needs_rag = True
-        
+
         return {"needs_table": state.needs_table, "needs_rag": state.needs_rag}
-    
+
     def _table_node(self, state: AgentState) -> Dict[str, Any]:
-        """Table node for handling data queries"""
+        """Table node for handling data queries by generating and executing SQL queries"""
         print(f"[DEBUG] Table Node called with query: {state.query}")
-        
-        # For now, just return the same query with a debug message
-        table_response = f"Table processing: {state.query}"
-        print(f"[DEBUG] Table Node response: {table_response}")
-        
+        logger.debug(f"Processing query in table node: {state.query}")
+
+        # Load schema from utils/schema.json
+        schema_path = os.path.join(os.path.dirname(
+            __file__), '..', 'utils', 'schema.json')
+        try:
+            with open(schema_path, 'r') as f:
+                schema = json.load(f)
+            print(f"[DEBUG] Schema loaded successfully: {schema}")
+            logger.debug(
+                f"Schema loaded from {schema_path}: {json.dumps(schema, indent=2)}")
+        except Exception as e:
+            logger.error(f"Failed to load schema.json: {e}")
+            return {
+                "table_response": f"Error: Could not load schema for query: {state.query}",
+                "error": str(e)
+            }
+
+        # Custom prompt for SQL generation
+        system_prompt = """
+        You are an expert SQL query generator. Based on the provided database schema and user query, generate a valid SQL SELECT query for MySQL.
+        - Use only the tables and columns defined in the schema.
+        - Table names may contain spaces or special characters (e.g., "pdf_b55f83da_table_1_25").
+        - Map schema data types to MySQL types: "String" to VARCHAR, "Integer" to INT.
+        - Ensure the query is syntactically correct and optimized for MySQL.
+        - Do not include INSERT, UPDATE, or DELETE statements.
+        - If the query cannot be answered with the schema, return "Cannot generate SQL for this query."
+        - Return only the SQL query, without explanations or additional text.
+        - If aggregations (e.g., COUNT, SUM, AVG) are needed, use them appropriately.
+        - Handle joins if multiple tables are required, using appropriate keys (e.g., product or product_supplied for relationships).
+
+        Schema:
+        {schema}
+
+        User Query: {query}
+        """
+
+        # Format the prompt with schema and query
+        formatted_prompt = system_prompt.format(
+            schema=json.dumps(schema, indent=2),
+            query=state.query
+        )
+        logger.debug(f"Formatted prompt for LLM: {formatted_prompt}")
+
+        messages = [
+            SystemMessage(content=formatted_prompt),
+            HumanMessage(content=f"Generate SQL for query: {state.query}")
+        ]
+
+        try:
+            response = self.llm.invoke(messages)
+            # Clean the LLM response to remove Markdown or extra characters
+            sql_query = response.content.strip()
+            # Remove Markdown code block markers if present
+            if sql_query.startswith('```sql'):
+                sql_query = sql_query.replace(
+                    '```sql', '').replace('```', '').strip()
+            logger.debug(f"Raw LLM response: {response.content}")
+            print(f"[DEBUG] Raw LLM response: {response.content}")
+            logger.debug(f"Cleaned SQL query: {sql_query}")
+            print(f"[DEBUG] Cleaned SQL query: {sql_query}")
+
+            # Validate the response to ensure it's not an error message
+            if "Cannot generate SQL" in sql_query:
+                logger.warning(
+                    f"LLM could not generate SQL for query: {state.query}")
+                table_response = f"Unable to process data query: {state.query}"
+                return {"table_response": table_response}
+
+            print(f"[DEBUG] Generated SQL query: {sql_query}")
+            logger.debug(
+                f"Generated SQL query for '{state.query}': {sql_query}")
+
+        except Exception as e:
+            logger.error(f"Error generating SQL query: {e}")
+            table_response = f"Error generating SQL for query: {state.query}"
+            return {"table_response": table_response}
+
+        # Execute the SQL query on MySQL
+        try:
+            # Database URL (prefer environment variable for security)
+            db_url = os.getenv(
+                'database_url',
+                'mysql+pymysql://admin:AlphaBeta1212@mydb.ch44qeeiq2ju.ap-south-1.rds.amazonaws.com:3306/My_database?charset=utf8mb4'
+            )
+
+            # Parse the database URL
+            parsed_url = urlparse(db_url)
+            query_params = parse_qs(parsed_url.query)
+            charset = query_params.get('charset', ['utf8mb4'])[0]
+
+            # Extract database name from path (remove leading '/')
+            database = parsed_url.path.lstrip('/')
+
+            # Connect to MySQL
+            conn = mysql.connector.connect(
+                host=parsed_url.hostname,
+                user=parsed_url.username,
+                password=parsed_url.password,
+                database=database,
+                port=parsed_url.port or 3306,
+                charset=charset
+            )
+            cursor = conn.cursor()
+            logger.debug(f"Connected to MySQL database: {database}")
+            print(f"[DEBUG] Connected to MySQL database: {database}")
+
+            # Execute the query
+            cursor.execute(sql_query)
+            results = cursor.fetchall()
+            logger.debug(f"Query executed successfully. Results: {results}")
+            print(f"[DEBUG] Query execution results: {results}")
+
+            # Format the results
+            if results:
+                # For a SUM query, expect a single value
+                if len(results) == 1 and len(results[0]) == 1:
+                    total_quantity = results[0][0]
+                    table_response = f"Total quantity of '{state.query.split('of')[1].strip().strip('?')}' sold: {total_quantity}"
+                else:
+                    # Handle other result formats if needed
+                    table_response = f"Query results: {results}"
+            else:
+                table_response = f"No results found for query: {state.query}"
+                logger.warning(f"No results returned for query: {sql_query}")
+
+            # Close the connection
+            cursor.close()
+            conn.close()
+
+            logger.debug("MySQL connection closed")
+
+        except mysql.connector.Error as db_err:
+            logger.error(f"MySQL error: {db_err}")
+            table_response = f"Database error while processing query: {state.query}"
+        except Exception as e:
+            logger.error(f"Error executing SQL query: {e}")
+            table_response = f"Error executing query: {state.query}"
+
         return {"table_response": table_response}
-    
+
     def _rag_node(self, state: AgentState) -> Dict[str, Any]:
         """RAG node for handling knowledge queries using ChatbotAgent"""
         print(f"[DEBUG] RAG Node called with query: {state.query}")

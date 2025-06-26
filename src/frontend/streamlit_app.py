@@ -300,7 +300,7 @@ class APIClient:
                 url,
                 files=files,
                 headers=headers,
-                timeout=60
+                timeout=600
             )
             
             logger.info(f"Upload response status: {response.status_code}")
