@@ -1,4 +1,4 @@
-# my-repo/app.py (Updated Entry Point)
+# /app.py
 
 import uvicorn
 import os

@@ -1,3 +1,5 @@
+# src/backend/utils/pdf_processor.py
+
 import logging
 import re
 import hashlib
@@ -11,7 +13,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
-
 
 class PDFProcessor:
     """Utility class for processing PDF files and storing data in MySQL."""

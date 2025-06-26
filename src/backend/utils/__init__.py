@@ -1,3 +1,4 @@
+# src/backend/utils/__init__.py
 """
 Backend utilities and service initialization module.
 
@@ -6,11 +7,10 @@ used throughout the PDF processing application.
 """
 
 import logging
-from ..config import config
+from ..config import config  # Fixed import path
 from ..services.embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
-
 
 def initialize_embedding_service() -> EmbeddingService:
     """
@@ -42,7 +42,6 @@ def initialize_embedding_service() -> EmbeddingService:
     except Exception as e:
         logger.error(f"Failed to initialize embedding service: {str(e)}")
         raise RuntimeError(f"Embedding service initialization failed: {str(e)}")
-
 
 __all__ = [
     'initialize_embedding_service',

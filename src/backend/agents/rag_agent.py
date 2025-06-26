@@ -13,8 +13,8 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.prompts import ChatPromptTemplate
 
-from ..config import Config # Import Config from the parent package
-from .base import BaseChatbotAgent # Import the base agent class
+from ..config import config  # Import config instance from the parent package
+from .base import BaseChatbotAgent  # Import the base agent class
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +30,12 @@ class ChatbotAgent(BaseChatbotAgent):
         Initializes the ChatbotAgent with credentials and sets up LLM,
         embeddings, and vector store components.
         """
-        # Load configurations from the Config class
-        self.gemini_api_key = Config.GEMINI_API_KEY
-        self.pinecone_api_key = Config.PINECONE_API_KEY
-        self.pinecone_index_name = Config.PINECONE_INDEX_NAME
-        self.pinecone_cloud = Config.PINECONE_CLOUD
-        self.pinecone_region = Config.PINECONE_REGION
+        # Load configurations from the config instance
+        self.gemini_api_key = config.GEMINI_API_KEY
+        self.pinecone_api_key = config.PINECONE_API_KEY
+        self.pinecone_index_name = config.PINECONE_INDEX_NAME
+        self.pinecone_cloud = config.PINECONE_CLOUD
+        self.pinecone_region = config.PINECONE_REGION
         
         # Validate required credentials before proceeding
         self._validate_credentials()
@@ -49,7 +49,8 @@ class ChatbotAgent(BaseChatbotAgent):
         
     def _validate_credentials(self):
         """Validate all required environment variables."""
-        Config.validate_required_env_vars() # Use the static method from Config
+        config.validate_pinecone_config()
+        config.validate_gemini_config()
         
     def _initialize_pinecone(self):
         """Initialize Pinecone client and vector store."""

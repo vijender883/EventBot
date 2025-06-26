@@ -1,5 +1,10 @@
+# src/backend/config.py
 import logging
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging based on environment variable
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -17,7 +22,9 @@ class Config:
             os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10MB
         
         # Flask/FastAPI Configuration
+        self.HOST = os.getenv("HOST", "0.0.0.0")  # Added missing HOST
         self.PORT = int(os.getenv("PORT", 5000))
+        self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"  # Added missing DEBUG
         self.ENDPOINT = os.getenv("ENDPOINT", f"http://localhost:{self.PORT}")
         
         # Database configuration
@@ -67,6 +74,13 @@ class Config:
         if not self.GEMINI_API_KEY:
             logger.error("GEMINI_API_KEY environment variable is not set")
             raise ValueError("GEMINI_API_KEY is required")
+
+    @staticmethod
+    def validate_required_env_vars():
+        """Validate all required environment variables for ChatbotAgent."""
+        config_instance = Config()
+        config_instance.validate_pinecone_config()
+        config_instance.validate_gemini_config()
 
     @property
     def database_url(self):
