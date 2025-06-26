@@ -1,24 +1,15 @@
-# Flask Backend Requirements
-flask
-flask-cors
-werkzeug
-
-
 # Frontend Requirments
 streamlit
-requests
-dotenv
 
 # AI/ML Dependencies
 google-generativeai
 pinecone
+langgraph
+langchain-core
 langchain
 langchain-community
 langchain-pinecone
 langchain-google-genai
-
-# PDF Processing
-pypdf
 
 # Utilities
 python-dotenv
@@ -43,3 +34,4 @@ cryptography
 # PDF Processing
 pdfplumber
 pandas
+pypdf
