@@ -1,6 +1,9 @@
-# Event Bot
+# PDF Assistant Chatbot
 
-A PDF document assistant with a FastAPI-based backend and a Streamlit-based frontend. The backend integrates with Google Gemini AI and Pinecone vector database, allowing users to upload PDF files and ask questions about their content using natural language via the frontend interface. Event bot(https://eventbot-pinecone-db.streamlit.app/)
+A PDF document assistant with a FastAPI-based backend and a Streamlit-based frontend. The backend integrates with Google Gemini AI and Pinecone vector database, allowing users to upload PDF files and ask questions about their content using natural language via the frontend interface.
+
+*(Note: The live demo link `https://eventbot-pinecone-db.streamlit.app/` should be verified if it points to the current FastAPI version or an older Flask version. Assuming it's current for now.)*
+Event bot: [https://eventbot-pinecone-db.streamlit.app/](https://eventbot-pinecone-db.streamlit.app/)
 
 ## 📖 Table of Contents
 
@@ -50,7 +53,9 @@ For a quick start, follow these steps:
 1.  **Clone the Repository:**
     ```bash
     git clone https://github.com/vijender883/Chatbot_Pinecone_flask_backend
+    # Or your fork's URL if you've forked it
     cd Chatbot_Pinecone_flask_backend
+    # The directory name might be different if the repo name changes, e.g., PDF-Assistant-Chatbot
     ```
 
 2.  **Create and Activate Virtual Environment:**
@@ -78,15 +83,16 @@ For comprehensive instructions, including API key setup, environment configurati
 To run the FastAPI backend server:
 ```bash
 make run-backend
-# Alternatively: uvicorn app:app --reload (or similar command based on your app structure)
+# Alternatively: uvicorn app:app --reload --host 0.0.0.0 --port 8000
+# (or the port specified in your .env file, e.g., 5000)
 ```
-The backend will typically start on `http://localhost:8000` (FastAPI's default) or `http://localhost:5000` if configured.
+The backend will typically start on `http://localhost:8000` (Uvicorn's default if not overridden by `PORT` in `.env`) or the port specified in your `.env` file (e.g., `http://localhost:5000`). Check your `.env` or `src/backend/config.py` for the exact port.
 
 ### Running the Frontend
 
 To run the Streamlit frontend application:
 1.  Ensure the backend is running.
-2.  Set the `ENDPOINT` environment variable if your backend is not on `http://localhost:5000`. For local development, you can add `ENDPOINT=http://localhost:5000` to your `.env` file.
+2.  Set the `ENDPOINT` environment variable in your `.env` file to point to your running backend. For local development, if your backend is running on port 8000, this would be `ENDPOINT=http://localhost:8000`. If it's on port 5000, use `ENDPOINT=http://localhost:5000`.
 ```bash
 make run-frontend
 # Alternatively: streamlit run src/frontend/streamlit_app.py
@@ -95,16 +101,16 @@ The frontend will typically be available at `http://localhost:8501`.
 
 ## 📡 API Endpoints
 
-The API routes are primarily defined in `src/backend/routes/chat.py`. The root `/` endpoint is in `app.py`.
+The API routes are defined in `src/backend/routes/chat.py` and mounted under the `/api/chat` prefix (or similar, check `src/backend/__init__.py` or `app.py` for how `chat_router` is included). The application entry point `app.py` initializes the FastAPI app.
 
-| Endpoint     | Method | Description                                          | Request Body (Format)         | Success Response (JSON Example)                                                                                                |
-|--------------|--------|------------------------------------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `/`          | GET    | Basic API information and available endpoints.       | N/A                           | `{"message": "PDF Assistant Chatbot API", "version": "1.0.0", "endpoints": {"/health": "GET - Health check", ...}}` (from `chat.py` if routed, or `app.py`'s version) |
-| `/health`    | GET    | Detailed health check of backend services.           | N/A                           | `{"status": "success", "health": {"gemini_api": true, ...}, "healthy": true}`                                                   |
-| `/uploadpdf` | POST   | Uploads a PDF file for processing and vectorization. | FormData: `file` (PDF file)   | `{"success": true, "message": "PDF 'name.pdf' uploaded...", "filename": "name.pdf"}`                                           |
-| `/answer`    | POST   | Asks a question about the processed PDF content.     | JSON: `{"query": "Your question?"}` | `{"answer": "AI generated answer."}`                                                                                           |
+| Endpoint          | Method | Description                                          | Request Body (Pydantic Model) / FormData | Success Response (Pydantic Model / JSON Example)                                                                              |
+|-------------------|--------|------------------------------------------------------|------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| `/api/chat/`      | GET    | Basic API information for the chat routes.           | N/A                                      | `{"message": "PDF Assistant Chatbot API", "version": "1.0.0", "docs": "/docs", ...}` (Actual response from `chat.py`'s index) |
+| `/api/chat/health`| GET    | Detailed health check of backend services.           | N/A                                      | `HealthResponse` model: `{"status": "success", "health": {"gemini_api": true, ...}, "healthy": true}`                         |
+| `/api/chat/uploadpdf`| POST | Uploads a PDF file for processing and vectorization. | FormData: `file: UploadFile`             | `UploadResponse` model: `{"success": true, "message": "PDF 'name.pdf' uploaded...", "filename": "name.pdf"}`               |
+| `/api/chat/answer`| POST   | Asks a question about the processed PDF content.     | `AnswerRequest` model: `{"query": "Your question?"}` | `AnswerResponse` model: `{"answer": "AI generated answer."}`                                                                  |
 
-*Note: The root endpoint `/` defined in `app.py` provides a simple welcome message. The one in `chat.py` (if `chat_bp` is mounted at root) offers more detail. The table reflects the more detailed one for completeness.*
+*Note: The exact root path for the chat API (e.g., `/api/chat`) depends on how the `chat_router` is included in the main `FastAPI` app instance in `app.py` or `src/backend/__init__.py`. The table assumes a prefix like `/api/chat`. FastAPI also provides automatic interactive API documentation at `/docs` and ReDoc at `/redoc` relative to the application root.*
 
 For deployment instructions, see the [Detailed Installation and Setup Guide](docs/INSTALLATION.md#-deploy-to-rendercom).
 
@@ -112,47 +118,50 @@ For deployment instructions, see the [Detailed Installation and Setup Guide](doc
 
 ### Project Structure
 ```
-Chatbot_Pinecone_flask_backend/
+PDF-Assistant-Chatbot/ (or Chatbot_Pinecone_flask_backend/)
 ├── .env                   # Local environment variables (gitignored)
 ├── .env.template          # Template for .env file
 ├── .git/                  # Git version control directory
 ├── .gitignore             # Specifies intentionally untracked files for Git
 ├── README.md              # This guide
 ├── Makefile               # Defines common tasks like running, testing, linting
-├── app.py                 # Main FastAPI application entry point for the backend (often named main.py or app.py)
-├── requirements.txt       # Python package dependencies for both backend and frontend
+├── app.py                 # Main FastAPI application entry point
+├── requirements.txt       # Python package dependencies
 ├── requirements-dev.txt   # Development-specific dependencies (testing, linting)
-├── start.sh               # Shell script for starting the backend application (e.g., via Uvicorn with Gunicorn workers)
+├── start.sh               # Shell script for starting the backend (e.g., Uvicorn with Gunicorn)
 ├── src/                   # Main source code directory
 │   ├── backend/           # Source code for the FastAPI backend
-│   │   ├── __init__.py
+│   │   ├── __init__.py    # Initializes backend, creates FastAPI app, includes routers
 │   │   ├── agents/
 │   │   │   ├── base.py
 │   │   │   └── rag_agent.py
 │   │   ├── config.py
 │   │   ├── routes/
 │   │   │   ├── __init__.py
-│   │   │   └── chat.py
+│   │   │   └── chat.py    # Defines APIRouter for chat functionalities
 │   │   ├── services/
 │   │   │   └── orchestrator.py
 │   │   └── utils/
 │   │       └── helper.py
 │   └── frontend/          # Source code for the Streamlit frontend
 │       └── streamlit_app.py # Main Streamlit application file
-└── tests/                 # Automated tests (primarily for the backend)
+└── tests/                 # Automated tests
     ├── conftest.py
     ├── test_agents/
+    │   └── test_rag_agent.py
     └── test_routes/
+        └── test_chat_routes.py
 ```
 
 ### Key Components
 
-**Backend:**
--   **`app.py`**: Initializes the FastAPI app, includes routers, and defines the root (`/`) endpoint for the backend. (Filename might be `main.py`)
--   **`src/backend/routes/chat.py`**: Contains the FastAPI APIRouter for core API endpoints: `/health`, `/uploadpdf`, and `/answer`.
--   **`src/backend/agents/rag_agent.py`**: Implements the core RAG (Retrieval Augmented Generation) logic, including PDF processing, vector embedding, and question answering using Gemini and Pinecone.
--   **`src/backend/services/orchestrator.py`**: Acts as a layer between API routes and the `RAGAgent`.
--   **`src/backend/config.py`**: Manages application configuration, loading settings from environment variables.
+**Backend (FastAPI):**
+-   **`app.py`**: Main application script. Creates the FastAPI app instance using `src.backend.create_app()`. Handles Uvicorn server startup.
+-   **`src/backend/__init__.py`**: Contains `create_app()` factory function which initializes the FastAPI application, loads configuration, sets up the `ChatbotAgent`, `Orchestrator`, and includes API routers (like `chat_router` from `src.backend.routes.chat`).
+-   **`src/backend/routes/chat.py`**: Defines an `APIRouter` for chat-related endpoints (`/health`, `/uploadpdf`, `/answer`). Uses Pydantic models for request/response validation.
+-   **`src/backend/agents/rag_agent.py`**: Core RAG logic (PDF processing, embeddings, Pinecone interaction, Gemini LLM communication).
+-   **`src/backend/services/orchestrator.py`**: Service layer, delegating calls from route handlers to the `ChatbotAgent`.
+-   **`src/backend/config.py`**: Manages application configuration (environment variables, application settings).
 
 **Frontend:**
 -   **`src/frontend/streamlit_app.py`**: A Streamlit application providing the user interface. It interacts with the backend API to upload PDFs and get answers to questions.
@@ -167,11 +176,12 @@ The application uses environment variables for configuration. These are typicall
 -   `PINECONE_INDEX_NAME`: The name of your Pinecone index.
 -   `PINECONE_CLOUD`: The cloud provider for your Pinecone index (e.g., `aws`).
 -   `PINECONE_REGION`: The region of your Pinecone index (e.g., `us-east-1`).
--   `APP_ENV`: Set to `development` or `production`. This variable typically controls debug mode and other environment-specific settings. (Formerly `FLASK_ENV`)
--   `PORT`: Port for the backend server (defaults to `8000` for Uvicorn/FastAPI, but can be `5000` if configured).
+-   `DEBUG`: Set to `True` or `False` (boolean). Controls FastAPI's debug mode (influences auto-reloading with Uvicorn, detailed error pages). This replaces `APP_ENV` or `FLASK_ENV` for debug purposes.
+-   `HOST`: Host address for the backend server (defaults to `0.0.0.0`).
+-   `PORT`: Port for the backend server (defaults to `5000` as per `src/backend/config.py`, but Uvicorn's default is `8000` if not set). It's important to ensure consistency or clarify which default takes precedence if `PORT` isn't in `.env`.
 
 **Frontend Variables:**
--   `ENDPOINT`: The URL of the backend API. For local development, this would typically be `http://localhost:5000`.
+-   `ENDPOINT`: The URL of the backend API. For local development, if the backend runs on port 5000 (as per `config.py` default), this would be `http://localhost:5000/api/chat`. If backend is on port 8000, it would be `http://localhost:8000/api/chat`. *The path `/api/chat` should be included if the Streamlit app expects to hit the chat router directly.*
 
 ## 🧪 Running Tests
 
@@ -194,9 +204,9 @@ For troubleshooting common installation and setup issues, refer to the [Detailed
 ### Debug Mode (Local Development)
 
 For more verbose error output locally:
-1.  Set `APP_ENV=development` in your `.env` file. This often enables FastAPI's debug mode.
-2.  Optionally, set `LOG_LEVEL=DEBUG` in `.env` for more detailed application logs.
-3.  Run the app (e.g., `uvicorn app:app --reload`).
+1.  Set `DEBUG=True` in your `.env` file. This enables FastAPI's debug mode.
+2.  The Uvicorn server run via `make run-backend` or `uvicorn app:app --reload` will typically show more detailed logs when debug mode is on.
+3.  You can also adjust Python's standard logging levels within the application if needed, though `DEBUG=True` often provides sufficient detail for development.
 
 ## 📊 Monitoring
 
@@ -206,8 +216,8 @@ The `/health` endpoint (see [API Endpoints](#-api-endpoints)) provides detailed 
 
 ### Logs
 
--   **Local Development**: Logs are output to the console where `python app.py` is running. Adjust `LOG_LEVEL` in `.env` for desired verbosity.
--   **Render Deployment**: Access and monitor logs via the Render dashboard for your service. This is crucial for diagnosing issues in the production environment.
+-   **Local Development**: Logs are output to the console where the Uvicorn server (running `app:app`) is running. FastAPI and Uvicorn provide structured logging. The level of detail can be influenced by the `DEBUG` setting in `.env`.
+-   **Render Deployment**: Access and monitor logs via the Render dashboard for your service. This is crucial for diagnosing issues in the deployed environment.
 
 Key information to look for in logs:
 -   Successful/failed PDF uploads and processing durations.
@@ -219,24 +229,24 @@ Key information to look for in logs:
 
 -   **API Keys**: Handled via environment variables (`.env` locally, Render's environment settings). Never hardcode keys. Ensure `.env` is in `.gitignore`.
 -   **File Uploads**:
-    *   `werkzeug.utils.secure_filename` is used to sanitize filenames.
-    *   File type and size are validated as per `ALLOWED_EXTENSIONS` and `MAX_FILE_SIZE` in the app configuration.
--   **Input Validation**: Basic validation for presence of query in `/answer` and file in `/uploadpdf`. Sensitive inputs should always be validated and sanitized.
--   **CORS**: FastAPI handles CORS through `CORSMiddleware`. Ensure it's configured securely, especially in production, by specifying allowed origins, methods, and headers. For example:
+    *   FastAPI's `UploadFile` object provides the filename. The application uses this filename but primarily relies on temporary file paths for processing. Direct persistent storage of user-uploaded filenames would require sanitization (e.g., using a library or custom logic if `werkzeug.utils.secure_filename` is not used).
+    *   File type (`content_type` via `UploadFile.content_type`) and size (`UploadFile.size`) are validated within the `/uploadpdf` endpoint against `ALLOWED_EXTENSIONS` and `MAX_FILE_SIZE` from the `Config` class.
+-   **Input Validation**: FastAPI leverages Pydantic models (e.g., `AnswerRequest`) for robust request body validation. Path and query parameters are also automatically validated by FastAPI based on type hints.
+-   **CORS**: FastAPI handles Cross-Origin Resource Sharing (CORS) through `fastapi.middleware.cors.CORSMiddleware`. This is configured in `src/backend/__init__.py` (in the `create_app` function). The current configuration in the codebase is:
     ```python
-    from fastapi.middleware.cors import CORSMiddleware
-
+    # In src/backend/__init__.py
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["https://your.frontend.domain.com"], # Or ["*"] for development
+        allow_origins=["*"],  # Allows all origins
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["*"],  # Allows all methods
+        allow_headers=["*"],  # Allows all headers
     )
     ```
--   **Error Handling**: FastAPI has built-in support for returning structured JSON error responses (e.g., using `HTTPException`) and allows for custom exception handlers. This helps avoid exposing raw stack traces.
--   **Dependency Management**: Keep `requirements.txt` up-to-date. Regularly audit dependencies for vulnerabilities using tools like `pip-audit` or GitHub's Dependabot.
--   **HTTPS**: Render automatically provides HTTPS for deployed services.
+    For production environments, `allow_origins` should be restricted to specific domains (e.g., `["https://your-frontend-domain.com"]`) instead of `["*"]`.
+-   **Error Handling**: FastAPI has excellent built-in support for returning structured JSON error responses using `HTTPException`. Custom exception handlers can also be defined for more tailored error information, helping to avoid exposing raw stack traces or sensitive details.
+-   **Dependency Management**: Keep `requirements.txt` and `requirements-dev.txt` up-to-date. Regularly audit dependencies for known vulnerabilities using tools like `pip-audit`, Snyk, GitHub's Dependabot, or similar services.
+-   **HTTPS**: Render (or other typical deployment platforms) automatically provides HTTPS for deployed services by terminating SSL/TLS at the load balancer or reverse proxy. Ensure Uvicorn is configured to trust proxy headers if necessary (e.g., `forwarded_allow_ips`).
 
 ## 📝 License
 
