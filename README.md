@@ -1,4 +1,4 @@
-# Event Bot
+# EventBot
 
 A PDF document assistant with a FastAPI-based backend and a Streamlit-based frontend. The backend integrates with Google Gemini AI and Pinecone vector database, allowing users to upload PDF files and ask questions about their content using natural language via the frontend interface. Event bot(https://eventbot-pinecone-db.streamlit.app/)
 
@@ -49,8 +49,8 @@ For a quick start, follow these steps:
 
 1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/vijender883/Chatbot_Pinecone_flask_backend
-    cd Chatbot_Pinecone_flask_backend
+    git clone https://github.com/vijender883/EventBot
+    cd EventBot
     ```
 
 2.  **Create and Activate Virtual Environment:**
@@ -99,7 +99,7 @@ The API routes are primarily defined in `src/backend/routes/chat.py`. The root `
 
 | Endpoint     | Method | Description                                          | Request Body (Format)         | Success Response (JSON Example)                                                                                                |
 |--------------|--------|------------------------------------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `/`          | GET    | Basic API information and available endpoints.       | N/A                           | `{"message": "PDF Assistant Chatbot API", "version": "1.0.0", "endpoints": {"/health": "GET - Health check", ...}}` (from `chat.py` if routed, or `app.py`'s version) |
+| `/`          | GET    | Basic API information and available endpoints.       | N/A                           | `{"message": "EventBot API", "version": "1.0.0", "endpoints": {"/health": "GET - Health check", ...}}` (from `chat.py` if routed, or `app.py`'s version) |
 | `/health`    | GET    | Detailed health check of backend services.           | N/A                           | `{"status": "success", "health": {"gemini_api": true, ...}, "healthy": true}`                                                   |
 | `/uploadpdf` | POST   | Uploads a PDF file for processing and vectorization. | FormData: `file` (PDF file)   | `{"success": true, "message": "PDF 'name.pdf' uploaded...", "filename": "name.pdf"}`                                           |
 | `/answer`    | POST   | Asks a question about the processed PDF content.     | JSON: `{"query": "Your question?"}` | `{"answer": "AI generated answer."}`                                                                                           |
@@ -112,7 +112,7 @@ For deployment instructions, see the [Detailed Installation and Setup Guide](doc
 
 ### Project Structure
 ```
-Chatbot_Pinecone_flask_backend/
+EventBot/
 ├── .env                   # Local environment variables (gitignored)
 ├── .env.template          # Template for .env file
 ├── .git/                  # Git version control directory

@@ -2,7 +2,7 @@
 
 ## 1. Introduction/Overview
 
-This document outlines the architecture of the PDF Assistant Chatbot. The system comprises a FastAPI-based Python backend and a Streamlit-based Python frontend. The backend is designed to process PDF documents, store their content in a vector database (Pinecone), and answer user questions using a Retrieval Augmented Generation (RAG) approach with Google Gemini. The frontend provides a user interface for uploading PDFs and interacting with the chatbot.
+This document outlines the architecture of EventBot. The system comprises a FastAPI-based Python backend and a Streamlit-based Python frontend. The backend is designed to process PDF documents, store their content in a vector database (Pinecone), and answer user questions using a Retrieval Augmented Generation (RAG) approach with Google Gemini. The frontend provides a user interface for uploading PDFs and interacting with the chatbot.
 
 The architecture emphasizes modularity, separating concerns into distinct components for the user interface, backend request handling, core processing logic, external service interactions, and configuration management. This approach aims for maintainability, scalability, and clarity.
 
@@ -93,7 +93,7 @@ The application is structured into several key components:
 The project's codebase is organized as follows:
 
 ```plaintext
-EventBot/  # (Example, repo name might change)
+EventBot/
 ├── .env                           # Local environment variables (gitignored)
 ├── .env.template                  # Template for .env file
 ├── Makefile                       # Defines common tasks like running, testing, linting
