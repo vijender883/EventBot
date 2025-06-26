@@ -1,168 +1,205 @@
 # src/backend/routes/chat.py
-
-import os
-import tempfile
 import logging
-from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, Body
-from pydantic import BaseModel
-from typing import Dict, Any
+import traceback
+from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 
-from ..agents.rag_agent import ChatbotAgent
-from ..config import Config
+from ..models import QueryRequest, AnswerResponse, UploadResponse, IndexResponse
 
-
-chat_router = APIRouter()
+# Configure logging
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-#pydantic models
+# FastAPI router
+router = APIRouter(tags=["pdf_processing"])
 
-class HealthResponse(BaseModel):
-    status: str
-    health: Dict[str, Any]
-    healthy: bool
 
-class AnswerRequest(BaseModel):
-    query: str
-
-class AnswerResponse(BaseModel):
-    answer: str
-
-class UploadResponse(BaseModel):
-    success: bool
-    message: str
-    filename: str
-
-class ErrorResponse(BaseModel):
-    detail: str
-
-# dependency injection
-
-def get_chatbot_agent(request: Request) -> ChatbotAgent:
-    """Dependency to get the chatbot agent instance from the app state."""
-    agent = request.app.state.chatbot_agent
-    if not agent:
-        raise HTTPException(status_code=503, detail="Service temporarily unavailable: ChatbotAgent not initialized")
-    return agent
-
-def get_config(request: Request) -> Config:
-    """Dependency to get the config instance from the app state."""
-    return request.app.state.config
-
-#helper functions
-
-def allowed_file(filename: str, config: Config = Depends(get_config)):
-    """Check if the uploaded file is allowed based on its extension."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in config.ALLOWED_EXTENSIONS
-
-# api endpoints
-
-@chat_router.get("/health", response_model=HealthResponse, tags=["Monitoring"])
-def health_check(agent: ChatbotAgent = Depends(get_chatbot_agent)):
-    """Health check endpoint for the chatbot service."""
-    try:
-        health_status = agent.health_check()
-        return {
-            "status": "success",
-            "health": health_status,
-            "healthy": health_status.get("overall_health", False)
-        }
-    except Exception as e:
-        logger.error(f"Health check endpoint error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@chat_router.post("/answer", response_model=AnswerResponse, tags=["Chat"])
-def answer_question(
-    request_data: AnswerRequest,
-    agent: ChatbotAgent = Depends(get_chatbot_agent)
-):
-    """
-    Endpoint to receive a user question and return an answer.
-    """
-    try:
-        if not request_data.query or not request_data.query.strip():
-            raise HTTPException(status_code=400, detail="Empty query provided")
-        
-        result = agent.answer_question(request_data.query)
-        return {"answer": result.get("answer", "No answer found.")}
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        logger.error(f"Error in answer endpoint: {e}")
-        raise HTTPException(status_code=500, detail="I apologize, but I encountered an error while processing your question.")
-
-@chat_router.post("/uploadpdf", response_model=UploadResponse, tags=["Data Management"])
-async def upload_pdf(
-    file: UploadFile = File(...),
-    agent: ChatbotAgent = Depends(get_chatbot_agent),
-    config: Config = Depends(get_config)
-):
-    """
-    Endpoint to upload and process a PDF file.
-    """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file selected")
-
-    if not allowed_file(file.filename, config):
-         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
-
-    # Secure filename is handled by UploadFile, but good to be aware.
-    # The filename attribute is sanitized.
-    filename = file.filename
-
-    # Handle file size check
-    # Note: A middleware is a better place for a robust size check.
-    # This is a basic check.
-    if file.size and file.size > config.MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail=f"File too large. Maximum size is {config.MAX_FILE_SIZE // (1024*1024)}MB")
-
-    #save to a temporary file to be processed
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
-            content = await file.read()
-            temp_file.write(content)
-            temp_file_path = temp_file.name
-    except Exception as e:
-        logger.error(f"Failed to save uploaded file temporarily: {e}")
-        raise HTTPException(status_code=500, detail="Could not save file for processing.")
-
-    try:
-        user_id = None
-        if 'resume' in filename.lower() or 'cv' in filename.lower():
-            user_id = Path(filename).stem
-        
-        success = agent.upload_data(temp_file_path, user_id)
-        
-        if success:
-            logger.info(f"Successfully processed PDF upload: {filename}")
-            return {
-                "success": True,
-                "message": f"PDF '{filename}' uploaded and processed successfully",
-                "filename": filename
-            }
-        else:
-            logger.warning(f"Failed to process PDF upload: {filename}")
-            raise HTTPException(status_code=500, detail="Failed to process the PDF file")
-            
-    finally:
-        #clean up
-        try:
-            os.unlink(temp_file_path)
-        except Exception as e:
-            logger.warning(f"Failed to delete temporary file {temp_file_path}: {e}")
-
-@chat_router.get("/", tags=["General"])
-def index():
-    """Root endpoint for the API, providing basic information."""
+@router.get("/", response_model=IndexResponse)
+@router.head("/")
+async def index():
+    """Root endpoint for the API."""
+    logger.info("Accessed root endpoint")
     return {
         "message": "PDF Assistant Chatbot API",
         "version": "1.0.0",
-        "docs": "/docs",
-        "redoc": "/redoc",
         "endpoints": {
-            "/health": "GET - Health check",
+            "/": "GET, HEAD - Root endpoint",
             "/answer": "POST - Answer questions",
-            "/uploadpdf": "POST - Upload PDF files"
+            "/uploadpdf": "POST - Upload PDF files",
+            "/health": "GET - Health check"
         }
     }
 
+
+@router.get("/health")
+async def health_check(fastapi_request: Request):
+    """Health check endpoint to verify service status."""
+    try:
+        logger.info("Health check requested")
+        
+        # Check if orchestrator exists
+        orchestrator = getattr(fastapi_request.app.state, 'orchestrator', None)
+        logger.info(f"Orchestrator status: {'Available' if orchestrator else 'Not available'}")
+        
+        if orchestrator is None:
+            return {
+                "status": "unhealthy",
+                "message": "Orchestrator not initialized",
+                "timestamp": "2025-06-26",
+                "services": {
+                    "orchestrator": False,
+                    "chatbot_agent": False,
+                    "overall_health": False
+                }
+            }
+        
+        # Get health from orchestrator
+        health_status = orchestrator.get_service_health()
+        logger.info(f"Health status from orchestrator: {health_status}")
+        
+        return {
+            "status": "healthy" if health_status.get("overall_health", False) else "degraded",
+            "message": "Service operational" if health_status.get("overall_health", False) else "Service running with limited functionality",
+            "timestamp": "2025-06-26",
+            "services": health_status
+        }
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}", exc_info=True)
+        return {
+            "status": "unhealthy",
+            "message": f"Health check error: {str(e)}",
+            "timestamp": "2025-06-26",
+            "services": {
+                "orchestrator": False,
+                "chatbot_agent": False,
+                "overall_health": False,
+                "error": str(e)
+            }
+        }
+
+
+@router.post("/answer", response_model=AnswerResponse)
+async def answer_question(request: QueryRequest, fastapi_request: Request):
+    """Endpoint to receive a user question and return an answer."""
+    try:
+        logger.info("Answer endpoint called")
+        
+        # Validate query
+        query = request.query.strip()
+        if not query:
+            logger.warning("Empty query provided")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "answer": "Please provide a valid question.",
+                    "success": False,
+                    "error": "Empty query provided"
+                }
+            )
+        
+        logger.info(f"Processing query: {query[:100]}...")
+        
+        # Check orchestrator availability
+        orchestrator = getattr(fastapi_request.app.state, 'orchestrator', None)
+        logger.info(f"Orchestrator availability: {'Yes' if orchestrator else 'No'}")
+        
+        if orchestrator is None:
+            logger.error("Orchestrator not available in app state")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "answer": "Service temporarily unavailable. Application not properly initialized.",
+                    "success": False,
+                    "error": "Orchestrator not initialized"
+                }
+            )
+        
+        # Process query through orchestrator
+        logger.info("Delegating query to orchestrator")
+        try:
+            result = orchestrator.process_query(query)
+            logger.info(f"Orchestrator response: success={result.get('success', False)}")
+        except Exception as e:
+            logger.error(f"Orchestrator process_query failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "answer": "An error occurred while processing your question.",
+                    "success": False,
+                    "error": f"Orchestrator error: {str(e)}"
+                }
+            )
+        
+        # Validate orchestrator response
+        if not isinstance(result, dict):
+            logger.error(f"Invalid response type from orchestrator: {type(result)}")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "answer": "Invalid response from service.",
+                    "success": False,
+                    "error": "Invalid response format"
+                }
+            )
+        
+        # Check if the operation was successful
+        if not result.get("success", False):
+            logger.warning(f"Orchestrator returned unsuccessful result: {result.get('error', 'Unknown error')}")
+            # Return the error as a proper response rather than raising an exception
+            return {
+                "answer": result.get("answer", "An error occurred while processing your question."),
+                "success": False,
+                "error": result.get("error", "Unknown error")
+            }
+        
+        logger.info("Successfully processed query")
+        return {
+            "answer": result.get("answer", "No answer provided"),
+            "success": True,
+            "error": None
+        }
+        
+    except HTTPException as e:
+        # Re-raise HTTP exceptions as-is
+        logger.info(f"HTTP exception in answer endpoint: {e.status_code} - {e.detail}")
+        raise e
+    except Exception as e:
+        # Catch any unexpected errors
+        logger.error(f"Unexpected error in answer endpoint: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "answer": "An unexpected error occurred while processing your question.",
+                "success": False,
+                "error": f"Internal server error: {str(e)}"
+            }
+        )
+
+
+@router.post("/uploadpdf", response_model=UploadResponse)
+async def upload_pdf(file: UploadFile = File(...), fastapi_request: Request = None):
+    """
+    Upload and process a PDF file, storing text in Pinecone and tables in MySQL.
+    """
+    try:
+        logger.info("PDF upload endpoint called")
+        
+        # Import and use upload function
+        from ..utils.upload_pdf import process_pdf_upload
+        result = await process_pdf_upload(file)
+        logger.info(f"Successfully processed PDF: {result.get('filename', 'unknown')}")
+        return result
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Unexpected error in upload endpoint: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "message": "An unexpected error occurred during PDF processing",
+                "error": str(e)
+            }
+        )

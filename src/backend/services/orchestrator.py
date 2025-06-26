@@ -1,75 +1,89 @@
 # src/backend/services/orchestrator.py
 
 import logging
-from typing import Dict, Any
-
-from ..agents.rag_agent import ChatbotAgent # Import the specific agent
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
 class Orchestrator:
     """
-    Orchestrates interactions between different agents or services.
-
-    For this initial setup, it primarily wraps the ChatbotAgent,
-    but it's designed to be extensible for multi-agent scenarios.
+    Simple, robust orchestrator that can handle missing dependencies.
     """
 
-    def __init__(self, chatbot_agent: ChatbotAgent):
+    def __init__(self, chatbot_agent=None):
         """
-        Initializes the Orchestrator with an instance of ChatbotAgent.
-
-        Args:
-            chatbot_agent (ChatbotAgent): An initialized instance of the ChatbotAgent.
+        Initialize orchestrator with optional chatbot agent.
         """
-        if not isinstance(chatbot_agent, ChatbotAgent):
-            raise TypeError("Provided agent is not an instance of ChatbotAgent.")
         self.chatbot_agent = chatbot_agent
-        logger.info("Orchestrator initialized with ChatbotAgent.")
+        self.is_functional = chatbot_agent is not None
+        
+        if self.is_functional:
+            logger.info("Orchestrator initialized with functional ChatbotAgent.")
+        else:
+            logger.warning("Orchestrator initialized without ChatbotAgent - limited functionality.")
 
     def process_query(self, query: str) -> Dict[str, Any]:
         """
-        Processes a user query by delegating it to the appropriate agent.
-
-        In this version, it simply calls the ChatbotAgent's answer_question method.
-        Future versions could add logic to:
-        - Determine intent (e.g., event question vs. resume question)
-        - Route to different specialized agents
-        - Combine responses from multiple agents
-        - Handle conversational context
-
-        Args:
-            query (str): The user's question.
-
-        Returns:
-            Dict[str, Any]: The response from the delegated agent.
+        Process a user query.
         """
-        logger.info(f"Orchestrating query: {query[:50]}...")
-        # For now, directly use the chatbot agent
-        response = self.chatbot_agent.answer_question(query)
-        return response
+        logger.info(f"Processing query: {query[:50]}...")
+        
+        if not self.is_functional:
+            logger.warning("ChatbotAgent not available for query processing")
+            return {
+                "answer": "Service temporarily unavailable. Please configure PINECONE_API_KEY and GEMINI_API_KEY environment variables to enable AI functionality.",
+                "success": False,
+                "error": "ChatbotAgent not initialized - missing API configuration"
+            }
+        
+        try:
+            logger.info("Delegating query to ChatbotAgent")
+            response = self.chatbot_agent.answer_question(query)
+            logger.info("Successfully processed query through ChatbotAgent")
+            return response
+        except Exception as e:
+            logger.error(f"Error processing query: {e}", exc_info=True)
+            return {
+                "answer": "An error occurred while processing your question. Please try again.",
+                "success": False,
+                "error": str(e)
+            }
 
     def ingest_document(self, file_path: str, user_id: str = None) -> bool:
         """
-        Ingests a document by delegating to the appropriate agent.
-
-        Args:
-            file_path (str): The path to the document file.
-            user_id (str, optional): An identifier for the user associated with the document.
-                                     Defaults to None.
-
-        Returns:
-            bool: True if ingestion was successful, False otherwise.
+        Ingest a document.
         """
-        logger.info(f"Orchestrating document ingestion for: {file_path}")
-        # For now, directly use the chatbot agent's upload_data method
-        success = self.chatbot_agent.upload_data(file_path, user_id=user_id)
-        return success
+        if not self.is_functional:
+            logger.error("Cannot ingest document: ChatbotAgent not available")
+            return False
+        
+        try:
+            return self.chatbot_agent.upload_data(file_path, user_id=user_id)
+        except Exception as e:
+            logger.error(f"Error ingesting document: {e}", exc_info=True)
+            return False
 
     def get_service_health(self) -> Dict[str, Any]:
         """
-        Checks the health of the underlying chatbot agent and other services.
+        Get service health status.
         """
-        logger.info("Checking service health via orchestrator.")
-        return self.chatbot_agent.health_check()
-
+        if not self.is_functional:
+            return {
+                "orchestrator": True,
+                "chatbot_agent": False,
+                "overall_health": False,
+                "message": "ChatbotAgent not initialized"
+            }
+        
+        try:
+            health = self.chatbot_agent.health_check()
+            health["orchestrator"] = True
+            return health
+        except Exception as e:
+            logger.error(f"Error checking health: {e}", exc_info=True)
+            return {
+                "orchestrator": True,
+                "chatbot_agent": False,
+                "overall_health": False,
+                "error": str(e)
+            }
