@@ -23,6 +23,7 @@ pypdf
 # Utilities
 python-dotenv
 requests
+werkzeug
 
 # Development (optional)
 gunicorn
@@ -34,6 +35,11 @@ pydantic
 starlette
 python-multipart
 
-# Add any other specific dependencies your project needs, e.g., for data processing
-# numpy
-# pandas
+# Database
+sqlalchemy
+pymysql
+cryptography
+
+# PDF Processing
+pdfplumber
+pandas
