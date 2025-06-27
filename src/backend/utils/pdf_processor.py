@@ -117,8 +117,6 @@ class PDFProcessor:
         prompt = f"""
 Analyze this table data and provide schema information in JSON format.
 
-Context (text before table): {context_text[:400]}
-
 Table Preview (first 3 rows):
 {table_preview}
 
