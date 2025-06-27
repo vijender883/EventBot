@@ -108,22 +108,125 @@ class PDFProcessor:
             logger.warning(f"Failed to extract context text: {e}")
             return ""
 
+
+
+    def _generate_detailed_description(self, table_info: TableInfo, stored_row_count: int) -> str:
+        """Generate detailed table description after data is stored."""
+        # Prepare full table preview (first 3 rows + last 2 rows if more than 5 total)
+        headers = list(table_info.schema.keys())
+        data_rows = table_info.data[1:]  # Skip header
+        
+        preview_data = []
+        if len(data_rows) <= 5:
+            preview_data = data_rows
+        else:
+            preview_data = data_rows[:3] + ["..."] + data_rows[-2:]
+        
+        # Format table for display
+        table_display = []
+        table_display.append(headers)
+        for row in preview_data:
+            if row == "...":
+                table_display.append(["..."] * len(headers))
+            else:
+                # Ensure row matches header length
+                formatted_row = row + [""] * (len(headers) - len(row)) if len(row) < len(headers) else row[:len(headers)]
+                table_display.append(formatted_row)
+        
+        table_preview = "\n".join(["\t".join([str(cell) for cell in row]) for row in table_display])
+        
+        # Create schema summary
+        schema_summary = []
+        for col_name, col_type in table_info.schema.items():
+            type_desc = {
+                'string': 'VARCHAR(255) - Text data',
+                'text': 'TEXT - Long text content', 
+                'integer': 'INT - Whole numbers',
+                'float': 'FLOAT - Decimal numbers',
+                'currency': 'FLOAT - Monetary values (parsed from currency symbols)',
+                'percentage': 'FLOAT - Percentage values (stored as decimal: 0.25 for 25%)'
+            }.get(col_type.lower(), f'{col_type.upper()} - Custom type')
+            schema_summary.append(f"- {col_name}: {type_desc}")
+        
+        schema_text = "\n".join(schema_summary)
+        
+        prompt = f"""
+    Generate a comprehensive table description for database query generation. This description will help an LLM choose the correct table and generate accurate SQL queries.
+
+    TABLE INFORMATION:
+    Table Name: {table_info.name}
+    Total Rows Stored: {stored_row_count}
+    Column Count: {len(headers)}
+
+    SCHEMA DETAILS:
+    {schema_text}
+
+    SAMPLE DATA:
+    {table_preview}
+
+    Please provide a detailed description including:
+
+    ### 1. Table Metadata
+    - Table name and purpose
+    - Complete list of column names and their data types
+    - Key identifier columns (if any)
+
+    ### 2. Sample Data Context  
+    - Brief explanation of the sample data shown
+    - Data format and typical values
+
+    ### 3. Table Purpose
+    - What this table represents (e.g., "Employee records", "Product catalog", "Financial transactions")
+    - Main use case or business function
+
+    ### 4. Common Query Patterns
+    - 2-3 example query types this table would be used for
+    - Typical filtering, grouping, or aggregation scenarios
+
+    ### 5. Data Characteristics
+    - Total number of records
+    - Any notable data patterns or relationships
+
+    Provide a clear, comprehensive description that would help an LLM understand when and how to use this table for query generation:
+    """
+
+        try:
+            response = self.model.generate_content(prompt)
+            detailed_description = response.text.strip()
+            
+            # Clean up any markdown formatting if present
+            if "```" in detailed_description:
+                detailed_description = detailed_description.replace("```", "").strip()
+                
+            return detailed_description
+            
+        except Exception as e:
+            logger.error(f"Failed to generate detailed description: {e}")
+            # Fallback to basic description
+            return f"""Table: {table_info.name}
+    Columns: {', '.join(headers)}
+    Total Rows: {stored_row_count}
+    Purpose: Data table with {len(headers)} columns containing structured information.
+    Schema: {dict(table_info.schema)}"""
+
+
+
     def _query_gemini_for_schema(self, table_data: List[List[str]], context_text: str, file_hash: str) -> TableSchema:
-        """Query Gemini for table schema and metadata."""
+        """Query Gemini for table schema only (description will be generated later with full data)."""
         # Prepare the table preview (top 3 rows)
         preview_rows = table_data[:3]
         table_preview = "\n".join(["\t".join(row) for row in preview_rows])
         
         prompt = f"""
-Analyze this table data and provide schema information in JSON format.
+    Analyze this table data and provide schema information in JSON format.
 
-Table Preview (first 3 rows):
-{table_preview}
+    Table Preview (first 3 rows):
+    {table_preview}
 
-Please provide a JSON response with:
-1. table_name: A descriptive name for this table (use format: pdf_{file_hash}_tablename)
-2. table_schema: Object mapping column names to SQL types (use: "string", "integer", "float", "text", "currency", "percentage")
-3. description: Brief description of what this table contains
+    Please provide a JSON response with:
+    1. table_name: A descriptive name for this table (use format: pdf_{file_hash}_tablename)
+    2. table_schema: Object mapping column names to SQL types (use: "string", "integer", "float", "text", "currency", "percentage")
+    3. description: "TBD" (will be generated later with full data)
 
 Schema type guidelines:
 - "currency": For monetary values (e.g., $4.34, €10.50, ¥1000)
@@ -175,29 +278,73 @@ Respond with valid JSON only:
                 description="Auto-generated table schema"
             )
 
-    def _query_gemini_for_continuation(self, current_table_headers: List[str], new_table_preview: List[List[str]]) -> bool:
+    def _query_gemini_for_continuation(self, current_table_headers: List[str], new_table_preview: List[List[str]], current_table_data: List[List[str]] = None) -> bool:
         """Query Gemini to check if a table is a continuation of the previous one."""
         current_headers_str = "\t".join(current_table_headers)
         new_preview_str = "\n".join(["\t".join(row) for row in new_table_preview[:3]])
         
+        # Include current table context with headers and top 3 data rows
+        current_table_context = ""
+        if current_table_data and len(current_table_data) > 1:
+            # Format: headers + top 3 data rows (skip the header row which is at index 0)
+            current_preview_rows = [current_table_headers] + current_table_data[1:4]  # headers + top 3 data rows
+            current_table_context = "\n".join(["\t".join(row) for row in current_preview_rows])
+        else:
+            # Fallback to just headers if no data available
+            current_table_context = current_headers_str
+        
         prompt = f"""
-Determine if this new table data is a continuation of the previous table.
+    Determine if this new table data is a continuation of the previous table.
 
-Current table headers:
-{current_headers_str}
+    Current table (headers + top 3 data rows):
+    {current_table_context}
 
-New table preview (first 3 rows):
-{new_preview_str}
+    New table preview (first 3 rows):
+    {new_preview_str}
 
-Respond with only "YES" if this is a continuation (same structure, no headers), or "NO" if it's a new table.
-"""
+    Analyze if this is a continuation (same structure, no headers) or a new table.
+
+    Respond with JSON only:
+    - If it's a continuation: {{"status": true}}
+    - If it's a new table: {{"status": false, "reason": "explain why it's not a continuation"}}
+
+    Examples:
+    - Same column count, data rows only: {{"status": true}}
+    - Different column count: {{"status": false, "reason": "Column count mismatch"}}
+    - Different data structure: {{"status": false, "reason": "Data structure differs from previous table"}}
+
+    JSON response:
+    """
 
         try:
             response = self.model.generate_content(prompt)
-            result = response.text.strip().upper()
-            return "YES" in result
+            response_text = response.text.strip()
+            
+            # Clean up the response to extract JSON
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0]
+            
+            result = json.loads(response_text)
+            
+            # Log the reason if it's not a continuation
+            if not result.get("status", False):
+                reason = result.get("reason", "No reason provided")
+                logger.info(f"Table not a continuation: {reason}")
+                print(f"  → Not a continuation: {reason}")
+            else:
+                print(f"  → Confirmed continuation")
+                
+            return result.get("status", False)
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini JSON response for continuation: {e}")
+            print(f"  → JSON parsing failed, assuming new table")
+            return False
         except Exception as e:
             logger.error(f"Failed to query Gemini for continuation: {e}")
+            print(f"  → Query failed, assuming new table")
             return False
 
     def _parse_numeric_value(self, value: str, expected_type: str) -> Optional[float]:
@@ -507,10 +654,10 @@ Respond with only "YES" if this is a continuation (same structure, no headers), 
                         print(f"  Schema: {schema_info.table_schema}")
                         print(f"  Description: {schema_info.description}")
 
-                        # Save schema to file
+                        # Save schema to file (description will be updated after storage)
                         self.schemas[schema_info.table_name] = {
                             "schema": schema_info.table_schema,
-                            "description": schema_info.description,
+                            "description": "TBD - Will be generated after data storage",
                             "file_hash": file_hash,
                             "created_at": pd.Timestamp.now().isoformat()
                         }
@@ -671,6 +818,17 @@ Respond with only "YES" if this is a continuation (same structure, no headers), 
                 
                 print(f"✓ Successfully stored {len(validated_rows)} validated rows")
                 logger.info(f"Successfully stored {len(validated_rows)} rows in {table_info.name}")
+
+                # Generate detailed description after successful storage
+                print("Generating detailed table description...")
+                detailed_description = self._generate_detailed_description(table_info, len(validated_rows))
+                print(f"✓ Generated detailed description ({len(detailed_description)} characters)")
+
+                # Update schema with detailed description
+                self.schemas[table_info.name]['description'] = detailed_description
+                self._save_schemas()
+                print(f"✓ Updated schema file with detailed description")
+
                 return True
             else:
                 print("✗ No valid rows to store")
