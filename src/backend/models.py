@@ -6,7 +6,7 @@ This module defines the data models used throughout the FastAPI application
 for request validation and response serialization.
 """
 
-from typing import Dict, Optional
+from typing import Dict, List, Any, Optional
 from pydantic import BaseModel
 
 
@@ -78,3 +78,34 @@ class IndexResponse(BaseModel):
                 }
             }
         }
+
+
+class DataSummary(BaseModel):
+    """Model for data summary information."""
+    pinecone: Dict[str, Any]
+    mysql: Dict[str, Any]
+
+
+class OperationDetails(BaseModel):
+    """Model for individual operation details."""
+    success: bool
+    message: str
+    details: Dict[str, Any]
+
+
+class ClearDataResponse(BaseModel):
+    """Response model for clear all data endpoint."""
+    success: bool
+    operations: Dict[str, OperationDetails]
+    summary: str
+    pre_clear_summary: Optional[DataSummary] = None
+    post_clear_summary: Optional[DataSummary] = None
+
+
+class DataSummaryResponse(BaseModel):
+    """Response model for data summary endpoint."""
+    success: bool
+    message: str
+    data: DataSummary
+    timestamp: str
+    totals: Dict[str, int]

@@ -21,7 +21,7 @@ class TableAgent:
 
         Args:
             gemini_api_key (str): Google Gemini API key
-            schema_path (str, optional): Path to schema.json file
+            schema_path (str, optional): Path to table_schema.json file
         """
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-1.5-flash",
@@ -30,7 +30,7 @@ class TableAgent:
         )
         # Default schema path if not provided
         self.schema_path = schema_path or os.path.join(
-            os.path.dirname(__file__), '..', 'utils', 'schema.json'
+            os.path.dirname(__file__), '..', 'utils', 'table_schema.json'
         )
         # Load schema during initialization
         self.schema = self._load_schema()
@@ -38,7 +38,7 @@ class TableAgent:
 
     def _load_schema(self) -> Dict[str, Any]:
         """
-        Load the database schema from schema.json
+        Load the database schema from table_schema.json
 
         Returns:
             Dict[str, Any]: Schema data or empty dict on failure
@@ -51,7 +51,7 @@ class TableAgent:
             print(f"[DEBUG] Schema loaded successfully: {schema}")
             return schema
         except Exception as e:
-            logger.error(f"Failed to load schema.json: {e}")
+            logger.error(f"Failed to load table_schema.json: {e}")
             return {}
 
     def process_query(self, query: str) -> str:
