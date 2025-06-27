@@ -54,6 +54,22 @@ class ManagerAgent:
             self.combiner_agent = None
 
         self.workflow = self._create_workflow()
+        try:
+            from .table_agent import TableAgent
+            if not os.path.exists(os.path.join(os.path.dirname(__file__), 'table_agent.py')):
+                raise FileNotFoundError("table_agent.py not found in agents directory")
+            self.table_agent = TableAgent(gemini_api_key)
+            logger.info("Table Agent initialized successfully in Manager Agent")
+
+        except ImportError as e:
+            logger.error(f"Failed to import TableAgent: {e}", exc_info=True)
+            self.table_agent = None
+        except FileNotFoundError as e:
+            logger.error(f"TableAgent file error: {e}", exc_info=True)
+            self.table_agent = None
+        except Exception as e:
+            logger.error(f"Failed to initialize TableAgent: {e}", exc_info=True)
+            self.table_agent = None
 
     def _create_workflow(self) -> StateGraph:
         """Create the LangGraph workflow"""
@@ -145,146 +161,22 @@ class ManagerAgent:
         return {"needs_table": state.needs_table, "needs_rag": state.needs_rag}
 
     def _table_node(self, state: AgentState) -> Dict[str, Any]:
-        """Table node for handling data queries by generating and executing SQL queries"""
+        """Table node for handling data queries using TableAgent"""
         print(f"[DEBUG] Table Node called with query: {state.query}")
-        logger.debug(f"Processing query in table node: {state.query}")
-
-        # Load schema from utils/schema.json
-        schema_path = os.path.join(os.path.dirname(
-            __file__), '..', 'utils', 'schema.json')
-        try:
-            with open(schema_path, 'r') as f:
-                schema = json.load(f)
-            print(f"[DEBUG] Schema loaded successfully: {schema}")
-            logger.debug(
-                f"Schema loaded from {schema_path}: {json.dumps(schema, indent=2)}")
-        except Exception as e:
-            logger.error(f"Failed to load schema.json: {e}")
-            return {
-                "table_response": f"Error: Could not load schema for query: {state.query}",
-                "error": str(e)
-            }
-
-        # Custom prompt for SQL generation
-        system_prompt = """
-        You are an expert SQL query generator. Based on the provided database schema and user query, generate a valid SQL SELECT query for MySQL.
-        - Use only the tables and columns defined in the schema.
-        - Table names may contain spaces or special characters (e.g., "pdf_b55f83da_table_1_25").
-        - Map schema data types to MySQL types: "String" to VARCHAR, "Integer" to INT.
-        - Ensure the query is syntactically correct and optimized for MySQL.
-        - Do not include INSERT, UPDATE, or DELETE statements.
-        - If the query cannot be answered with the schema, return "Cannot generate SQL for this query."
-        - Return only the SQL query, without explanations or additional text.
-        - If aggregations (e.g., COUNT, SUM, AVG) are needed, use them appropriately.
-        - Handle joins if multiple tables are required, using appropriate keys (e.g., product or product_supplied for relationships).
-
-        Schema:
-        {schema}
-
-        User Query: {query}
-        """
-
-        # Format the prompt with schema and query
-        formatted_prompt = system_prompt.format(
-            schema=json.dumps(schema, indent=2),
-            query=state.query
-        )
-        logger.debug(f"Formatted prompt for LLM: {formatted_prompt}")
-
-        messages = [
-            SystemMessage(content=formatted_prompt),
-            HumanMessage(content=f"Generate SQL for query: {state.query}")
-        ]
 
         try:
-            response = self.llm.invoke(messages)
-            # Clean the LLM response to remove Markdown or extra characters
-            sql_query = response.content.strip()
-            # Remove Markdown code block markers if present
-            if sql_query.startswith('```sql'):
-                sql_query = sql_query.replace(
-                    '```sql', '').replace('```', '').strip()
-            logger.debug(f"Raw LLM response: {response.content}")
-            print(f"[DEBUG] Raw LLM response: {response.content}")
-            logger.debug(f"Cleaned SQL query: {sql_query}")
-            print(f"[DEBUG] Cleaned SQL query: {sql_query}")
-
-            # Validate the response to ensure it's not an error message
-            if "Cannot generate SQL" in sql_query:
-                logger.warning(
-                    f"LLM could not generate SQL for query: {state.query}")
-                table_response = f"Unable to process data query: {state.query}"
-                return {"table_response": table_response}
-
-            print(f"[DEBUG] Generated SQL query: {sql_query}")
-            logger.debug(
-                f"Generated SQL query for '{state.query}': {sql_query}")
-
-        except Exception as e:
-            logger.error(f"Error generating SQL query: {e}")
-            table_response = f"Error generating SQL for query: {state.query}"
-            return {"table_response": table_response}
-
-        # Execute the SQL query on MySQL
-        try:
-            # Database URL (prefer environment variable for security)
-            db_url = os.getenv(
-                'database_url',
-                'mysql+pymysql://admin:AlphaBeta1212@mydb.ch44qeeiq2ju.ap-south-1.rds.amazonaws.com:3306/My_database?charset=utf8mb4'
-            )
-
-            # Parse the database URL
-            parsed_url = urlparse(db_url)
-            query_params = parse_qs(parsed_url.query)
-            charset = query_params.get('charset', ['utf8mb4'])[0]
-
-            # Extract database name from path (remove leading '/')
-            database = parsed_url.path.lstrip('/')
-
-            # Connect to MySQL
-            conn = mysql.connector.connect(
-                host=parsed_url.hostname,
-                user=parsed_url.username,
-                password=parsed_url.password,
-                database=database,
-                port=parsed_url.port or 3306,
-                charset=charset
-            )
-            cursor = conn.cursor()
-            logger.debug(f"Connected to MySQL database: {database}")
-            print(f"[DEBUG] Connected to MySQL database: {database}")
-
-            # Execute the query
-            cursor.execute(sql_query)
-            results = cursor.fetchall()
-            logger.debug(f"Query executed successfully. Results: {results}")
-            print(f"[DEBUG] Query execution results: {results}")
-
-            # Format the results
-            if results:
-                # For a SUM query, expect a single value
-                if len(results) == 1 and len(results[0]) == 1:
-                    total_quantity = results[0][0]
-                    table_response = f"Total quantity of '{state.query.split('of')[1].strip().strip('?')}' sold: {total_quantity}"
-                else:
-                    # Handle other result formats if needed
-                    table_response = f"Query results: {results}"
+            if self.table_agent:
+                table_response = self.table_agent.process_query(state.query)
+                print(
+                    f"[DEBUG] Table Node response from TableAgent: {table_response}")
             else:
-                table_response = f"No results found for query: {state.query}"
-                logger.warning(f"No results returned for query: {sql_query}")
-
-            # Close the connection
-            cursor.close()
-            conn.close()
-
-            logger.debug("MySQL connection closed")
-
-        except mysql.connector.Error as db_err:
-            logger.error(f"MySQL error: {db_err}")
-            table_response = f"Database error while processing query: {state.query}"
+                logger.error("TableAgent not initialized")
+                table_response = f"Error: Table processing unavailable for query: {state.query}"
+                print(f"[DEBUG] Table Node error: TableAgent not initialized")
         except Exception as e:
-            logger.error(f"Error executing SQL query: {e}")
-            table_response = f"Error executing query: {state.query}"
+            logger.error(f"Error in table node: {e}")
+            table_response = f"Error processing data query: {state.query}"
+            print(f"[DEBUG] Table Node error response: {table_response}")
 
         return {"table_response": table_response}
 
