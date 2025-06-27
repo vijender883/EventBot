@@ -141,7 +141,7 @@ async def process_pdf_upload(file: UploadFile) -> dict:
             print(f"✓ File: {filename}")
             print(f"✓ Text chunks stored in Pinecone: {text_chunks_stored}")
             print(f"✓ Tables stored in MySQL: {tables_stored}")
-            print(f"✓ Schemas saved to table_schema.json: {processing_result.get('schemas_saved', 0)}")
+            print(f"✓ Schemas saved to src/backend/utils/table_schema.json: {processing_result.get('schemas_saved', 0)}")
             for table in table_summary:
                 print(f"  - {table['name']}: {table['rows_stored']} rows")
             print("==========================\n")
@@ -189,7 +189,7 @@ async def process_pdf_upload(file: UploadFile) -> dict:
 def get_table_schemas() -> dict:
     """Get all stored table schemas from the JSON file."""
     try:
-        schema_file = Path("table_schema.json")
+        schema_file = Path("src/backend/utils/table_schema.json")
         if schema_file.exists():
             import json
             with open(schema_file, 'r') as f:

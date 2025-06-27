@@ -1,7 +1,7 @@
 # src/backend/utils/schema_manager.py
 """
 Utility for managing table schemas created by the enhanced PDF processor.
-Provides functions to view, export, and manage the table_schema.json file.
+Provides functions to view, export, and manage the src/backend/utils/table_schema.json file.
 """
 
 import json
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SchemaManager:
     """Manager for table schemas stored in JSON format."""
     
-    def __init__(self, schema_file: str = "table_schema.json"):
+    def __init__(self, schema_file: str = "src/backend/utils/table_schema.json"):
         self.schema_file = Path(schema_file)
         self.schemas = self._load_schemas()
     
@@ -116,12 +116,12 @@ class SchemaManager:
                 
                 f.write("### Column Type Distribution\n\n")
                 type_descriptions = {
-                    'string': 'Text data (up to 255 characters)',
-                    'text': 'Long text content',
-                    'integer': 'Whole numbers',
-                    'float': 'Decimal numbers',
-                    'currency': 'Monetary values (parsed from $, €, £, etc.)',
-                    'percentage': 'Percentage values (stored as decimal: 0.25 for 25%)'
+                    'string': 'VARCHAR(255) - Text data (up to 255 characters)',
+                    'text': 'TEXT - Long text content',
+                    'integer': 'INT - Whole numbers',
+                    'float': 'FLOAT - Decimal numbers',
+                    'currency': 'FLOAT - Monetary values (parsed from $, €, £, etc.)',
+                    'percentage': 'FLOAT - Percentage values (stored as decimal: 0.25 for 25%)'
                 }
                 
                 for col_type, count in summary['column_type_distribution'].items():
@@ -148,20 +148,24 @@ class SchemaManager:
                 
                 for table_name, schema_info in self.schemas.items():
                     f.write(f"### {table_name}\n\n")
-                    f.write(f"**Description**: {schema_info.get('description', 'No description')}\n\n")
+                    
+                    # Write detailed description (which now includes all the comprehensive info)
+                    description = schema_info.get('description', 'No description available')
+                    f.write(f"{description}\n\n")
+                    
                     f.write(f"**Created**: {schema_info.get('created_at', 'Unknown')}\n\n")
                     
                     if 'file_hash' in schema_info:
                         f.write(f"**Source File Hash**: `{schema_info['file_hash']}`\n\n")
                     
-                    f.write("**Schema**:\n\n")
-                    f.write("| Column Name | Data Type | Description |\n")
-                    f.write("|-------------|-----------|-------------|\n")
+                    f.write("**Technical Schema**:\n\n")
+                    f.write("| Column Name | Data Type | SQL Type |\n")
+                    f.write("|-------------|-----------|----------|\n")
                     
                     schema = schema_info.get('schema', {})
                     for col_name, col_type in schema.items():
-                        type_desc = type_descriptions.get(col_type, 'Custom type')
-                        f.write(f"| {col_name} | {col_type} | {type_desc} |\n")
+                        sql_type = type_descriptions.get(col_type, f'{col_type.upper()} - Custom type').split(' - ')[0]
+                        f.write(f"| {col_name} | {col_type} | {sql_type} |\n")
                     
                     f.write("\n---\n\n")
             

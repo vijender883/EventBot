@@ -3,7 +3,8 @@ import logging
 import traceback
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 
-from ..models import QueryRequest, AnswerResponse, UploadResponse, IndexResponse
+from ..services.clear_data_service import clear_data_service
+from ..models import QueryRequest, AnswerResponse, UploadResponse, IndexResponse, ClearDataResponse 
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -201,5 +202,92 @@ async def upload_pdf(file: UploadFile = File(...), fastapi_request: Request = No
                 "success": False,
                 "message": "An unexpected error occurred during PDF processing",
                 "error": str(e)
+            }
+        )
+    
+@router.post("/clearalldata", response_model=ClearDataResponse)
+async def clear_all_data_endpoint(fastapi_request: Request):
+    """
+    Clear all data from both Pinecone index and MySQL database.
+    
+    ⚠️  WARNING: This permanently deletes ALL data and cannot be undone!
+    """
+    try:
+        logger.info("Clear all data endpoint called")
+        
+        # Get data summary before clearing
+        logger.info("Getting data summary before clearing")
+        pre_summary = await clear_data_service.get_data_summary()
+        logger.info(f"Pre-clear summary: Pinecone vectors={pre_summary['pinecone']['vector_count']}, MySQL tables={pre_summary['mysql']['table_count']}")
+        
+        # Perform the clearing operation
+        result = await clear_data_service.clear_all_data()
+        
+        # Get data summary after clearing
+        logger.info("Getting data summary after clearing")
+        post_summary = await clear_data_service.get_data_summary()
+        logger.info(f"Post-clear summary: Pinecone vectors={post_summary['pinecone']['vector_count']}, MySQL tables={post_summary['mysql']['table_count']}")
+        
+        # Add summaries to result
+        result["pre_clear_summary"] = pre_summary
+        result["post_clear_summary"] = post_summary
+        
+        if result["success"]:
+            logger.info("Successfully cleared all data")
+        else:
+            logger.error(f"Data clearing failed: {result['summary']}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in clear all data endpoint: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "message": "An unexpected error occurred while clearing data",
+                "summary": f"Internal server error: {str(e)}",
+                "operations": {
+                    "pinecone": {"success": False, "message": f"Error: {str(e)}", "details": {}},
+                    "mysql": {"success": False, "message": f"Error: {str(e)}", "details": {}}
+                }
+            }
+        )
+
+
+@router.get("/datasummary")
+async def get_data_summary_endpoint():
+    """
+    Get a summary of current data in both Pinecone and MySQL.
+    Useful for checking what data exists before clearing.
+    """
+    try:
+        logger.info("Data summary endpoint called")
+        
+        summary = await clear_data_service.get_data_summary()
+        
+        # Add some additional metadata
+        response = {
+            "success": True,
+            "message": "Data summary retrieved successfully",
+            "data": summary,
+            "timestamp": "2025-06-27",  # You might want to use actual timestamp
+            "totals": {
+                "pinecone_vectors": summary["pinecone"]["vector_count"] if summary["pinecone"]["available"] else 0,
+                "mysql_tables": summary["mysql"]["table_count"] if summary["mysql"]["available"] else 0
+            }
+        }
+        
+        logger.info(f"Data summary: {response['totals']}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting data summary: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "success": False,
+                "message": f"Error retrieving data summary: {str(e)}",
+                "data": None
             }
         )
