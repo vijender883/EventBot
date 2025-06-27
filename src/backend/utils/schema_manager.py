@@ -1,7 +1,7 @@
 # src/backend/utils/schema_manager.py
 """
 Utility for managing table schemas created by the enhanced PDF processor.
-Provides functions to view, export, and manage the table_schema.json file.
+Provides functions to view, export, and manage the src/backend/utils/table_schema.json file.
 """
 
 import json
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SchemaManager:
     """Manager for table schemas stored in JSON format."""
     
-    def __init__(self, schema_file: str = "table_schema.json"):
+    def __init__(self, schema_file: str = "src/backend/utils/table_schema.json"):
         self.schema_file = Path(schema_file)
         self.schemas = self._load_schemas()
     

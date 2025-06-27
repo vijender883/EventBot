@@ -56,7 +56,7 @@ class PDFProcessor:
             self.model = genai.GenerativeModel('gemini-1.5-flash')
             
             # Schema storage
-            self.schema_file = Path("table_schema.json")
+            self.schema_file = Path("src/backend/utils/table_schema.json")
             self.schemas = self._load_schemas()
             
             with self.engine.connect() as conn:
