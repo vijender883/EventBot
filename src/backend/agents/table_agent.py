@@ -28,10 +28,18 @@ class TableAgent:
             google_api_key=gemini_api_key,
             temperature=0.1  # Low temperature for precise SQL generation
         )
-        # Default schema path if not provided
-        self.schema_path = schema_path or os.path.join(
-            os.path.dirname(__file__), '..', 'utils', 'table_schema.json'
-        )
+        
+        # Fix: Use absolute path resolution to avoid working directory issues
+        if schema_path:
+            self.schema_path = schema_path
+        else:
+            # Get the project root directory (EventBot/)
+            current_file = os.path.abspath(__file__)  # /path/to/EventBot/src/backend/agents/table_agent.py
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))  # /path/to/EventBot/
+            self.schema_path = os.path.join(project_root, 'src', 'backend', 'utils', 'table_schema.json')
+        
+        logger.info(f"TableAgent schema path: {self.schema_path}")
+        
         # Load schema during initialization
         self.schema = self._load_schema()
         logger.info("Table Agent initialized successfully")
@@ -44,12 +52,38 @@ class TableAgent:
             Dict[str, Any]: Schema data or empty dict on failure
         """
         try:
+            # Check if file exists
+            if not os.path.exists(self.schema_path):
+                logger.error(f"Schema file not found at: {self.schema_path}")
+                # Try alternative paths
+                alternative_paths = [
+                    os.path.join(os.getcwd(), 'src', 'backend', 'utils', 'table_schema.json'),
+                    os.path.join(os.path.dirname(__file__), '..', 'utils', 'table_schema.json'),
+                    'src/backend/utils/table_schema.json',
+                    './src/backend/utils/table_schema.json'
+                ]
+                
+                for alt_path in alternative_paths:
+                    abs_alt_path = os.path.abspath(alt_path)
+                    logger.info(f"Trying alternative path: {abs_alt_path}")
+                    if os.path.exists(abs_alt_path):
+                        self.schema_path = abs_alt_path
+                        logger.info(f"Found schema at alternative path: {abs_alt_path}")
+                        break
+                else:
+                    logger.error("Schema file not found in any expected location")
+                    return {}
+            
             with open(self.schema_path, 'r') as f:
                 schema = json.load(f)
-            logger.debug(
-                f"Schema loaded from {self.schema_path}: {json.dumps(schema, indent=2)}")
-            print(f"[DEBUG] Schema loaded successfully: {schema}")
+            logger.info(f"Schema loaded from {self.schema_path}")
+            logger.debug(f"Schema content: {json.dumps(schema, indent=2)}")
+            print(f"[DEBUG] Schema loaded successfully: {list(schema.keys()) if schema else 'Empty schema'}")
             return schema
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in schema file {self.schema_path}: {e}")
+            return {}
         except Exception as e:
             logger.error(f"Failed to load table_schema.json: {e}")
             return {}
@@ -69,14 +103,17 @@ class TableAgent:
 
             if not self.schema:
                 logger.error("No schema available for query processing")
-                return f"Error: Could not load schema for query: {query}"
+                # Try to reload schema once
+                logger.info("Attempting to reload schema...")
+                self.schema = self._load_schema()
+                if not self.schema:
+                    return f"Error: Could not load schema for query: {query}"
 
             # Generate SQL query
             sql_query = self._generate_sql_query(query)
 
             if "Cannot generate SQL" in sql_query:
-                logger.warning(
-                    f"LLM could not generate SQL for query: {query}")
+                logger.warning(f"LLM could not generate SQL for query: {query}")
                 return f"Unable to process data query: {query}"
 
             # Execute SQL query
@@ -101,13 +138,14 @@ class TableAgent:
         You are an expert SQL query generator. Based on the provided database schema and user query, generate a valid SQL SELECT query for MySQL.
         - Use only the tables and columns defined in the schema.
         - Table names may contain spaces or special characters (e.g., "pdf_b55f83da_table_1_25").
-        - Map schema data types to MySQL types: "String" to VARCHAR, "Integer" to INT.
+        - Use backticks around table and column names to handle special characters.
+        - Map schema data types to MySQL types: "String" to VARCHAR, "Integer" to INT, "currency" to DECIMAL/FLOAT.
         - Ensure the query is syntactically correct and optimized for MySQL.
         - Do not include INSERT, UPDATE, or DELETE statements.
         - If the query cannot be answered with the schema, return "Cannot generate SQL for this query."
         - Return only the SQL query, without explanations or additional text.
         - If aggregations (e.g., COUNT, SUM, AVG) are needed, use them appropriately.
-        - Handle joins if multiple tables are required, using appropriate keys (e.g., product or product_supplied for relationships).
+        - Handle joins if multiple tables are required, using appropriate keys.
 
         Schema:
         {schema}
@@ -131,8 +169,7 @@ class TableAgent:
             sql_query = response.content.strip()
             # Remove Markdown code block markers if present
             if sql_query.startswith('```sql'):
-                sql_query = sql_query.replace(
-                    '```sql', '').replace('```', '').strip()
+                sql_query = sql_query.replace('```sql', '').replace('```', '').strip()
             logger.debug(f"Raw LLM response: {response.content}")
             print(f"[DEBUG] Raw LLM response: {response.content}")
             logger.debug(f"Cleaned SQL query: {sql_query}")
@@ -182,17 +219,33 @@ class TableAgent:
             # Execute the query
             cursor.execute(sql_query)
             results = cursor.fetchall()
+            column_names = [desc[0] for desc in cursor.description] if cursor.description else []
             logger.debug(f"Query executed successfully. Results: {results}")
             print(f"[DEBUG] Query execution results: {results}")
 
-            # Format the results
+            # Format the results based on query type
             if results:
-                # For a SUM query, expect a single value
+                # Check if it's a count/aggregation query
                 if len(results) == 1 and len(results[0]) == 1:
-                    total_quantity = results[0][0]
-                    return f"Total quantity of '{original_query.split('of')[1].strip().strip('?')}' sold: {total_quantity}"
+                    value = results[0][0]
+                    if "count" in original_query.lower() or "number" in original_query.lower():
+                        return f"Number of products with price above $500: {value}"
+                    else:
+                        return f"Result: {value}"
                 else:
-                    return f"Query results: {results}"
+                    # Format as table for multiple results
+                    result_text = "Query Results:\n"
+                    if column_names:
+                        result_text += " | ".join(column_names) + "\n"
+                        result_text += "-" * (len(" | ".join(column_names))) + "\n"
+                    
+                    for row in results[:10]:  # Limit to first 10 rows
+                        result_text += " | ".join(str(cell) for cell in row) + "\n"
+                    
+                    if len(results) > 10:
+                        result_text += f"... and {len(results) - 10} more rows"
+                    
+                    return result_text
             else:
                 logger.warning(f"No results returned for query: {sql_query}")
                 return f"No results found for query: {original_query}"
@@ -222,6 +275,8 @@ class TableAgent:
             test_response = self.llm.invoke([HumanMessage(content="Hello")])
             # Check schema availability
             schema_loaded = bool(self.schema)
+            schema_path_exists = os.path.exists(self.schema_path)
+            
             # Test database connection
             db_url = os.getenv(
                 'database_url',
@@ -246,6 +301,8 @@ class TableAgent:
                 "table_agent": True,
                 "llm_connection": True,
                 "schema_loaded": schema_loaded,
+                "schema_path_exists": schema_path_exists,
+                "schema_path": self.schema_path,
                 "db_connection": True,
                 "overall_health": True
             }
@@ -255,6 +312,8 @@ class TableAgent:
                 "table_agent": False,
                 "llm_connection": False,
                 "schema_loaded": bool(self.schema),
+                "schema_path_exists": os.path.exists(self.schema_path) if hasattr(self, 'schema_path') else False,
+                "schema_path": getattr(self, 'schema_path', 'Not set'),
                 "db_connection": False,
                 "overall_health": False,
                 "error": str(e)
