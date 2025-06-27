@@ -113,14 +113,37 @@ class ManagerAgent:
         """Manager node that analyzes the query and decides routing"""
         print(f"[DEBUG] Manager Node called with query: {state.query}")
 
-        system_prompt = """
-        You are a query analyzer. Analyze the user query and determine if it needs:
-        1. "table" - for data queries about statistics, numbers, calculations from structured data
-        2. "rag" - for general knowledge questions about people, facts, descriptions
-        3. "both" - for queries that need both data analysis and general knowledge
+        schema_info = self._load_table_schema()
+        system_prompt = f"""
+        You are a query analyzer that routes queries based on available data sources.
 
-        Keywords that suggest table queries: "how many", "statistics", "count", "total", "average", "goals scored", "data", "numbers"
-        Keywords that suggest RAG queries: "tell me about", "who is", "biography", "background", "describe"
+        AVAILABLE DATABASE SCHEMA:
+        {schema_info}
+
+        ROUTING RULES:
+        Analyze the user query and determine the appropriate route:
+
+        1. "table" - Use when the query can be answered using the database tables above
+        - Queries about specific data fields (ID, Name, Age, City, Occupation, Salary, Product, Category, Price, Stock, etc.)
+        - Statistical queries (count, sum, average, min, max)
+        - Data filtering and aggregation queries
+        - Comparative analysis using table data
+
+        2. "rag" - Use for general knowledge queries not answerable from the database
+        - Biographical information not in tables
+        - Historical facts and general knowledge
+        - Explanations of concepts or definitions
+        - Questions about entities not present in the database
+
+        3. "both" - Use when query needs database data AND external knowledge
+        - Questions requiring data analysis plus contextual explanation
+        - Queries needing database facts supplemented with general knowledge
+
+        DECISION PROCESS:
+        1. First check if the query asks for data that exists in the schema columns
+        2. If yes and no external knowledge needed → "table"
+        3. If no database data needed → "rag" 
+        4. If both database data and general knowledge needed → "both"
 
         Respond with only one word: "table", "rag", or "both"
         """
@@ -331,3 +354,60 @@ class ManagerAgent:
                 "overall_health": False,
                 "error": str(e)
             }
+    
+
+    def _load_table_schema(self) -> str:
+        """Load table schema from JSON file with better error handling and path resolution"""
+        try:
+            # Try multiple possible paths for the schema file
+            possible_paths = [
+                os.path.join(os.path.dirname(__file__), '..', 'utils', 'table_schema.json'),
+                os.path.join(os.getcwd(), 'src', 'backend', 'utils', 'table_schema.json'),
+                'src/backend/utils/table_schema.json',
+                './src/backend/utils/table_schema.json'
+            ]
+            
+            schema_path = None
+            for path in possible_paths:
+                abs_path = os.path.abspath(path)
+                logger.debug(f"Checking schema path: {abs_path}")
+                if os.path.exists(abs_path):
+                    schema_path = abs_path
+                    logger.info(f"Found schema file at: {schema_path}")
+                    break
+            
+            if not schema_path:
+                logger.error("Schema file not found in any expected location")
+                logger.error(f"Searched paths: {[os.path.abspath(p) for p in possible_paths]}")
+                return "Database schema not available - file not found"
+            
+            with open(schema_path, 'r') as f:
+                schema_data = json.load(f)
+            
+            if not schema_data:
+                logger.warning("Schema file is empty")
+                return "Database schema not available - empty schema"
+            
+            # Convert schema to detailed readable format for the LLM
+            schema_info = ""
+            for table_name, table_info in schema_data.items():
+                schema_info += f"\nTable: {table_name}\n"
+                schema_info += f"Description: {table_info.get('description', 'No description')}\n"
+                schema_info += f"Columns:\n"
+                
+                if 'schema' in table_info:
+                    for column_name, column_type in table_info['schema'].items():
+                        schema_info += f"  - {column_name} ({column_type})\n"
+                
+                schema_info += f"Created: {table_info.get('created_at', 'Unknown')}\n"
+                schema_info += "-" * 50 + "\n"
+            
+            logger.info(f"Successfully loaded schema with {len(schema_data)} tables")
+            return schema_info
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in schema file: {e}")
+            return "Database schema not available - invalid JSON format"
+        except Exception as e:
+            logger.error(f"Failed to load table schema: {e}")
+            return "Database schema not available"
