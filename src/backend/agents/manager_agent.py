@@ -1,13 +1,20 @@
-# src/backend/agents/manager_agent.py
-
 import logging
+import json
+import mysql.connector
 from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
+import os
+try:
+    from urllib.parse import urlparse, parse_qs
+except ImportError as e:
+    logging.error(f"Failed to import urllib.parse: {e}")
+    raise
 
 logger = logging.getLogger(__name__)
+
 
 class AgentState(BaseModel):
     """State object for the LangGraph workflow"""
@@ -17,15 +24,16 @@ class AgentState(BaseModel):
     needs_rag: bool = False
     table_response: str = ""
     rag_response: str = ""
-    
+
     class Config:
         arbitrary_types_allowed = True
+
 
 class ManagerAgent:
     """
     Manager Agent using LangGraph to orchestrate between Table and RAG nodes
     """
-    
+
     def __init__(self, gemini_api_key: str, chatbot_agent=None):
         """Initialize the Manager Agent with Gemini LLM and optional ChatbotAgent"""
         self.llm = ChatGoogleGenerativeAI(
@@ -34,28 +42,45 @@ class ManagerAgent:
             temperature=0.1
         )
         self.chatbot_agent = chatbot_agent
-        
+
         # Initialize Combiner Agent
         try:
             from .combiner_agent import CombinerAgent
             self.combiner_agent = CombinerAgent(gemini_api_key)
-            logger.info("Combiner Agent initialized successfully in Manager Agent")
+            logger.info(
+                "Combiner Agent initialized successfully in Manager Agent")
         except Exception as e:
             logger.error(f"Failed to initialize Combiner Agent: {e}")
             self.combiner_agent = None
-        
+
         self.workflow = self._create_workflow()
-    
+        try:
+            from .table_agent import TableAgent
+            if not os.path.exists(os.path.join(os.path.dirname(__file__), 'table_agent.py')):
+                raise FileNotFoundError("table_agent.py not found in agents directory")
+            self.table_agent = TableAgent(gemini_api_key)
+            logger.info("Table Agent initialized successfully in Manager Agent")
+
+        except ImportError as e:
+            logger.error(f"Failed to import TableAgent: {e}", exc_info=True)
+            self.table_agent = None
+        except FileNotFoundError as e:
+            logger.error(f"TableAgent file error: {e}", exc_info=True)
+            self.table_agent = None
+        except Exception as e:
+            logger.error(f"Failed to initialize TableAgent: {e}", exc_info=True)
+            self.table_agent = None
+
     def _create_workflow(self) -> StateGraph:
         """Create the LangGraph workflow"""
         workflow = StateGraph(AgentState)
-        
+
         # Add nodes
         workflow.add_node("manager", self._manager_node)
         workflow.add_node("table", self._table_node)
         workflow.add_node("rag", self._rag_node)
         workflow.add_node("combiner", self._combiner_node)
-        
+
         # Add edges
         workflow.set_entry_point("manager")
         workflow.add_conditional_edges(
@@ -63,12 +88,12 @@ class ManagerAgent:
             self._decide_route,
             {
                 "table_only": "table",
-                "rag_only": "rag", 
+                "rag_only": "rag",
                 "both": "table",  # Start with table, then go to RAG
                 "end": END
             }
         )
-        
+
         workflow.add_conditional_edges(
             "table",
             self._after_table_route,
@@ -78,37 +103,37 @@ class ManagerAgent:
                 "end": END
             }
         )
-        
+
         workflow.add_edge("rag", "combiner")
         workflow.add_edge("combiner", END)
-        
+
         return workflow.compile()
-    
+
     def _manager_node(self, state: AgentState) -> Dict[str, Any]:
         """Manager node that analyzes the query and decides routing"""
         print(f"[DEBUG] Manager Node called with query: {state.query}")
-        
+
         system_prompt = """
         You are a query analyzer. Analyze the user query and determine if it needs:
         1. "table" - for data queries about statistics, numbers, calculations from structured data
-        2. "rag" - for general knowledge questions about people, facts, descriptions  
+        2. "rag" - for general knowledge questions about people, facts, descriptions
         3. "both" - for queries that need both data analysis and general knowledge
-        
+
         Keywords that suggest table queries: "how many", "statistics", "count", "total", "average", "goals scored", "data", "numbers"
         Keywords that suggest RAG queries: "tell me about", "who is", "biography", "background", "describe"
-        
+
         Respond with only one word: "table", "rag", or "both"
         """
-        
+
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=f"Query: {state.query}")
         ]
-        
+
         try:
             response = self.llm.invoke(messages)
             decision = response.content.strip().lower()
-            
+
             # Set flags based on decision
             if decision == "table":
                 state.needs_table = True
@@ -123,27 +148,38 @@ class ManagerAgent:
                 # Default to RAG for unknown cases
                 state.needs_table = False
                 state.needs_rag = True
-            
-            print(f"[DEBUG] Manager decision: {decision} (table: {state.needs_table}, rag: {state.needs_rag})")
-            
+
+            print(
+                f"[DEBUG] Manager decision: {decision} (table: {state.needs_table}, rag: {state.needs_rag})")
+
         except Exception as e:
             logger.error(f"Error in manager node: {e}")
             # Default to RAG on error
             state.needs_table = False
             state.needs_rag = True
-        
+
         return {"needs_table": state.needs_table, "needs_rag": state.needs_rag}
-    
+
     def _table_node(self, state: AgentState) -> Dict[str, Any]:
-        """Table node for handling data queries"""
+        """Table node for handling data queries using TableAgent"""
         print(f"[DEBUG] Table Node called with query: {state.query}")
-        
-        # For now, just return the same query with a debug message
-        table_response = f"Table processing: {state.query}"
-        print(f"[DEBUG] Table Node response: {table_response}")
-        
+
+        try:
+            if self.table_agent:
+                table_response = self.table_agent.process_query(state.query)
+                print(
+                    f"[DEBUG] Table Node response from TableAgent: {table_response}")
+            else:
+                logger.error("TableAgent not initialized")
+                table_response = f"Error: Table processing unavailable for query: {state.query}"
+                print(f"[DEBUG] Table Node error: TableAgent not initialized")
+        except Exception as e:
+            logger.error(f"Error in table node: {e}")
+            table_response = f"Error processing data query: {state.query}"
+            print(f"[DEBUG] Table Node error response: {table_response}")
+
         return {"table_response": table_response}
-    
+
     def _rag_node(self, state: AgentState) -> Dict[str, Any]:
         """RAG node for handling knowledge queries using ChatbotAgent"""
         print(f"[DEBUG] RAG Node called with query: {state.query}")

@@ -1,0 +1,21 @@
+{
+    "pdf_b55f83da_table_1_25": {
+      "customer_id": "String",
+      "customer_name": "String",
+      "product": "String",
+      "quantity": "Integer",
+      "unit_price": "String",
+      "total_price": "String",
+      "purchase_date": "String"
+    },
+    "table 2": {
+      "supplier_id": "String",
+      "supplier_name": "String",
+      "contact_number": "String",
+      "email": "String",
+      "product_supplied": "String",
+      "supply_date": "String",
+      "unit_cost": "String",
+      "total_cost": "String"
+    }
+  }
