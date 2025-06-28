@@ -35,6 +35,7 @@ class EmbeddingService:
                 logger.info(f"Created new Pinecone index: {pinecone_config['index_name']}")
             
             self.pinecone_index = self.pc.Index(pinecone_config['index_name'])
+            self.dimension = pinecone_config['dimension']  # Store dimension for later use
             logger.info("Pinecone initialized successfully")
             
             print(f"\n=== Embedding Service Initialization ===")
@@ -87,7 +88,7 @@ class EmbeddingService:
             print(f"Error: Failed to generate embeddings: {str(e)}")
             raise
 
-    def store_text_embeddings(self, text_chunks: List[str], filename: str) -> int:
+    def store_text_embeddings(self, text_chunks: List[str], pdf_uuid: str, original_filename: str = None) -> int:
         """Store text embeddings in Pinecone using Google Gemini embeddings."""
         try:
             if not text_chunks:
@@ -104,9 +105,9 @@ class EmbeddingService:
             # Prepare vectors for Pinecone
             vectors = [
                 (
-                    f"{filename}_{uuid.uuid4()}",  # Unique ID
+                    f"{pdf_uuid}_{uuid.uuid4()}",  # Unique ID
                     embedding,  # Embedding vector
-                    {"text": chunk, "filename": filename}  # Metadata
+                    {"text": chunk, "pdf_uuid": pdf_uuid, "original_filename": original_filename or pdf_uuid}  # Metadata
                 )
                 for chunk, embedding in zip(text_chunks, embeddings)
             ]
@@ -147,7 +148,8 @@ class EmbeddingService:
             for match in results['matches']:
                 similar_texts.append({
                     'text': match['metadata']['text'],
-                    'filename': match['metadata']['filename'],
+                    'pdf_uuid': match['metadata'].get('pdf_uuid', match['metadata'].get('filename', 'unknown')),
+                    'original_filename': match['metadata'].get('original_filename', 'unknown'),
                     'score': match['score']
                 })
             

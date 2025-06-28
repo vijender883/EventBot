@@ -98,7 +98,8 @@ async def answer_question(request: QueryRequest, fastapi_request: Request):
                     "error": "Empty query provided"
                 }
             )
-        
+        if request.pdf_uuid is None:
+            logger.info(f"pdf_uuid from the request is None")
         logger.info(f"Processing query: {query[:100]}...")
         
         # Check orchestrator availability
@@ -118,8 +119,10 @@ async def answer_question(request: QueryRequest, fastapi_request: Request):
         
         # Process query through orchestrator
         logger.info("Delegating query to orchestrator")
+        pdf_uuid = request.pdf_uuid
+        logger.info(f"Processing query with PDF UUID: {pdf_uuid}")
         try:
-            result = orchestrator.process_query(query)
+            result = orchestrator.process_query(query, pdf_uuid)
             logger.info(f"Orchestrator response: success={result.get('success', False)}")
         except Exception as e:
             logger.error(f"Orchestrator process_query failed: {e}", exc_info=True)
@@ -189,6 +192,7 @@ async def upload_pdf(file: UploadFile = File(...), fastapi_request: Request = No
         # Import and use upload function
         from ..utils.upload_pdf import process_pdf_upload
         result = await process_pdf_upload(file)
+        logger.info(f"Successfully processed PDF UUID: {result.get('pdf_uuid')}")
         logger.info(f"Successfully processed PDF: {result.get('filename', 'unknown')}")
         return result
         

@@ -1,3 +1,4 @@
+# src/frontend/streamlit_app.py
 import streamlit as st
 import requests
 import os
@@ -139,7 +140,7 @@ class APIClient:
             logger.warning(f"Connection test failed: {str(e)}")
             # Don't raise error here, just log the warning
     
-    def send_query(self, query: str) -> Optional[ChatResponse]:
+    def send_query(self, query: str, pdf_uuid: str = None) -> Optional[ChatResponse]:
         """Send user query to the answer endpoint with comprehensive error handling"""
         if not query or not query.strip():
             error = ValidationError(
@@ -156,6 +157,8 @@ class APIClient:
         try:
             url = f"{self.endpoint}/answer"
             payload = {"query": query.strip()}
+            if pdf_uuid:
+                payload["pdf_uuid"] = pdf_uuid
             
             logger.info(f"Sending query to {url}")
             logger.debug(f"Query payload: {payload}")
@@ -262,7 +265,7 @@ class APIClient:
             )
             return None
     
-    def upload_pdf(self, pdf_file) -> bool:
+    def upload_pdf(self, pdf_file) -> dict:
         """Upload PDF file to the server with enhanced error handling"""
         try:
             # Validate file
@@ -302,7 +305,7 @@ class APIClient:
                 headers=headers,
                 timeout=600
             )
-            
+            logger.info(f"the whole result file {response}")
             logger.info(f"Upload response status: {response.status_code}")
             
             if response.status_code == 404:
@@ -328,11 +331,22 @@ class APIClient:
                     "UPLOAD_INVALID_JSON",
                     {"response_text": response.text[:500]}
                 )
-            
+
             success = data.get('success', False)
             logger.info(f"Upload result: {'success' if success else 'failed'}")
-            
-            return success
+
+            if success:
+                logger.info(f"pdf_uuid at upload pdf function: {data.get('pdf_uuid')}")
+                logger.info(f"data: {data}")
+                return {
+                    'success': True,
+                    'pdf_uuid': data.get('pdf_uuid'),
+                    'pdf_name': data.get('pdf_name'),
+                    'filename': data.get('filename'),
+                    'display_name': data.get('display_name', f"{data.get('pdf_name', 'Unknown')} ({data.get('pdf_uuid', 'No UUID')[:8]})")
+                }
+            else:
+                return {'success': False, 'error': data.get('message', 'Upload failed')}
             
         except ValidationError as e:
             ErrorHandler.log_error(
@@ -340,7 +354,7 @@ class APIClient:
                 "PDF Upload Validation",
                 e.message
             )
-            return False
+            return {'success': False, 'error': e.message}
             
         except requests.exceptions.Timeout as e:
             error = APIError(
@@ -353,7 +367,7 @@ class APIClient:
                 "PDF Upload Request",
                 "Upload took too long. Please try a smaller file."
             )
-            return False
+            return {'success': False, 'error': 'Upload timed out'}
             
         except requests.exceptions.ConnectionError as e:
             error = APIError(
@@ -366,7 +380,7 @@ class APIClient:
                 "PDF Upload Request",
                 "Cannot connect to the server for upload."
             )
-            return False
+            return {'success': False, 'error': 'Connection failed'}
             
         except Exception as e:
             error = APIError(
@@ -379,7 +393,7 @@ class APIClient:
                 "PDF Upload Request",
                 "An unexpected error occurred during upload."
             )
-            return False
+            return {'success': False, 'error': str(e)}
 
 class ChatUI:
     """Handles chat interface rendering and state management with error handling"""
@@ -399,6 +413,12 @@ class ChatUI:
                 st.session_state.debug_mode = False
             if "error_count" not in st.session_state:
                 st.session_state.error_count = 0
+            if 'current_pdf_uuid' not in st.session_state:
+                st.session_state.current_pdf_uuid = None
+            if 'current_pdf_name' not in st.session_state:
+                st.session_state.current_pdf_name = None
+            if 'pdf_display_name' not in st.session_state:
+                st.session_state.pdf_display_name = None
                 
             logger.info("Session state initialized successfully")
         except Exception as e:
@@ -441,7 +461,7 @@ class ChatUI:
             
             # Get response from API
             with st.spinner("Thinking..."):
-                response = self.api_client.send_query(user_input.strip())
+                response = self.api_client.send_query(user_input.strip(), st.session_state.current_pdf_uuid)
             
             if response:
                 # Add assistant response to chat
@@ -480,6 +500,12 @@ class ChatUI:
         """Render the main chat interface with error boundaries"""
         try:
             st.title("🤖 PDF Assistant Chatbot")
+            
+            # Display current PDF indicator
+            if st.session_state.current_pdf_uuid:
+                st.info(f"📄 Currently querying: **{st.session_state.pdf_display_name}**")
+            else:
+                st.warning("⚠️ No PDF uploaded. Please upload a PDF first for document-specific queries.")
             
             # Debug mode toggle in sidebar
             with st.sidebar:
@@ -549,14 +575,21 @@ class PDFUploader:
         """Handle PDF file upload with detailed error handling"""
         try:
             with st.spinner("Uploading PDF..."):
-                success = self.api_client.upload_pdf(pdf_file)
+                upload_result = self.api_client.upload_pdf(pdf_file)
             
-            if success:
+            if upload_result.get('success'):
+                # Store PDF info in session state
+                logger.info(f"pdf uuid: {upload_result.get('pdf_uuid')}")
+                st.session_state.current_pdf_uuid = upload_result.get('pdf_uuid')
+                st.session_state.current_pdf_name = upload_result.get('pdf_name')
+                st.session_state.pdf_display_name = upload_result.get('display_name')
+                
                 st.sidebar.success("✅ PDF uploaded successfully!")
+                st.sidebar.info(f"📄 Active PDF: **{st.session_state.pdf_display_name}**")
                 st.sidebar.balloons()
                 logger.info(f"PDF uploaded successfully: {pdf_file.name}")
             else:
-                st.sidebar.error("❌ Failed to upload PDF. Please try again.")
+                st.sidebar.error(f"❌ Upload failed: {upload_result.get('error', 'Unknown error')}")
                 
                 # Provide helpful suggestions
                 with st.sidebar.expander("💡 Troubleshooting"):

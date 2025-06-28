@@ -32,11 +32,11 @@ class Orchestrator:
         else:
             logger.warning("Orchestrator initialized without any agents - limited functionality.")
 
-    def process_query(self, query: str) -> Dict[str, Any]:
+    def process_query(self, query: str, pdf_uuid: Optional[str] = None) -> Dict[str, Any]:
         """
         Process a user query using the available agent.
         """
-        logger.info(f"Processing query: {query[:50]}...")
+        logger.info(f"Processing query: {query[:50]}... with PDF UUID: {pdf_uuid}")
         
         if not self.is_functional:
             logger.warning("No agents available for query processing")
@@ -49,12 +49,12 @@ class Orchestrator:
         try:
             if self.use_manager:
                 logger.info("Delegating query to Manager Agent")
-                response = self.manager_agent.process_query(query)
+                response = self.manager_agent.process_query(query, pdf_uuid)
                 logger.info("Successfully processed query through Manager Agent")
                 return response
             else:
                 logger.info("Delegating query to legacy ChatbotAgent")
-                response = self.chatbot_agent.answer_question(query)
+                response = self.chatbot_agent.answer_question(query, pdf_uuid)
                 logger.info("Successfully processed query through ChatbotAgent")
                 return response
                 

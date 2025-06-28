@@ -130,28 +130,37 @@ Context information (event details and/or resume content):
 Now, please answer this question: {question}
 """
 
-    def answer_question(self, question: str, top_k: int = 5) -> Dict[str, Any]:
+    def answer_question(self, question: str, top_k: int = 5, pdf_uuid: str = None) -> Dict[str, Any]:
         """
         Answers a question using RAG (Retrieval-Augmented Generation).
         
         Args:
             question (str): The user's question.
             top_k (int): Number of similar documents to retrieve.
+            pdf_uuid (str, optional): PDF UUID to filter results.
             
         Returns:
             dict: Response containing answer text and metadata.
         """
         try:
-            logger.info(f"Processing question: {question[:100]}...")
+            logger.info(f"Processing question: {question[:100]}... with PDF UUID: {pdf_uuid}")
             
-            results = self.vectorstore.similarity_search_with_score(question, k=top_k)
+            # Apply UUID filter if provided
+            if pdf_uuid:
+                filter_dict = {"pdf_uuid": pdf_uuid}
+                results = self.vectorstore.similarity_search_with_score(question, k=top_k, filter=filter_dict)
+            else:
+                results = self.vectorstore.similarity_search_with_score(question, k=top_k)
             
             if results:
                 context_text = "\n\n --- \n\n".join([doc.page_content for doc, _score in results])
                 if not context_text:
                     context_text = "No specific details found in the documents for your query."
             else:
-                context_text = "No information found in the knowledge base for your query."
+                if pdf_uuid:
+                    context_text = f"No information found for the current document (UUID: {pdf_uuid}). Please upload a PDF first."
+                else:
+                    context_text = "No information found in the knowledge base for your query."
             
             prompt_template_obj = ChatPromptTemplate.from_template(self.prompt_template)
             prompt = prompt_template_obj.format(context=context_text, question=question)
