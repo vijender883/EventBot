@@ -286,7 +286,7 @@ class APIClient:
             max_size = 2 * 1024 * 1024  # 2MB
             if file_size > max_size:
                 raise ValidationError(
-                    f"File too large: {file_size / 1024 / 1024:.1f}MB (max: 50MB)",
+                    f"File too large: {file_size / 1024 / 1024:.1f}MB (max: 2MB)",
                     "FILE_TOO_LARGE",
                     {"file_size": file_size, "max_size": max_size}
                 )
@@ -542,8 +542,11 @@ class PDFUploader:
             st.sidebar.title("📄 Document Upload")
             st.sidebar.markdown("Upload a PDF document to enhance the chatbot's knowledge.")
             
+            # Prominent warning about the actual file size limit
+            st.sidebar.error("⚠️ **IMPORTANT: Maximum file size is 2MB** (ignore the 200MB text below)")
+            
             uploaded_file = st.sidebar.file_uploader(
-                "Choose a PDF file",
+                "Choose a PDF file (2MB limit enforced)",
                 type=['pdf'],
                 help="Upload a PDF document for the chatbot to analyze (Max: 2MB)"
             )
@@ -553,10 +556,16 @@ class PDFUploader:
                 file_size = len(uploaded_file.getvalue())
                 file_size_mb = file_size / (1024 * 1024)
                 
-                st.sidebar.success(f"File selected: {uploaded_file.name}")
-                st.sidebar.info(f"Size: {file_size_mb:.1f} MB")
+                # Check file size immediately and show clear feedback
+                if file_size_mb > 2.0:
+                    st.sidebar.error(f"❌ **File rejected: {file_size_mb:.1f}MB exceeds 2MB limit**")
+                    st.sidebar.warning("Please select a smaller file (under 2MB)")
+                    return
                 
-                # Warn if file is large
+                st.sidebar.success(f"✅ File accepted: {uploaded_file.name}")
+                st.sidebar.info(f"📊 Size: {file_size_mb:.1f} MB (within 2MB limit)")
+                
+                # Warn if file is large but acceptable
                 if file_size_mb > 1:
                     st.sidebar.warning("⚠️ Large file detected. Upload may take longer.")
                 
@@ -570,7 +579,14 @@ class PDFUploader:
                 "PDF Upload Interface",
                 "Error in upload interface"
             )
-    
+
+
+
+
+
+
+
+
     def _handle_pdf_upload(self, pdf_file):
         """Handle PDF file upload with detailed error handling"""
         try:
@@ -581,8 +597,8 @@ class PDFUploader:
                 # Store PDF info in session state
                 logger.info(f"pdf uuid: {upload_result.get('pdf_uuid')}")
                 st.session_state.current_pdf_uuid = upload_result.get('pdf_uuid')
-                st.session_state.current_pdf_name = upload_result.get('pdf_name')
-                st.session_state.pdf_display_name = upload_result.get('display_name')
+                st.session_state.current_pdf_name = upload_result.get('filename')
+                st.session_state.pdf_display_name = upload_result.get('filename')
                 
                 st.sidebar.success("✅ PDF uploaded successfully!")
                 st.sidebar.info(f"📄 Active PDF: **{st.session_state.pdf_display_name}**")
