@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import re
-import hashlib
+import uuid
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
@@ -211,7 +211,7 @@ class PDFProcessor:
 
 
 
-    def _query_gemini_for_schema(self, table_data: List[List[str]], context_text: str, file_hash: str) -> TableSchema:
+    def _query_gemini_for_schema(self, table_data: List[List[str]], context_text: str, pdf_uuid: str, table_index: int = 1) -> TableSchema:
         """Query Gemini for table schema only (description will be generated later with full data)."""
         # Prepare the table preview (top 3 rows)
         preview_rows = table_data[:3]
@@ -224,7 +224,7 @@ class PDFProcessor:
     {table_preview}
 
     Please provide a JSON response with:
-    1. table_name: A descriptive name for this table (use format: pdf_{file_hash}_tablename)
+    1. table_name: A descriptive name for this table (use format: pdf_{pdf_uuid}_descriptive_name)
     2. table_schema: Object mapping column names to SQL types (use: "string", "integer", "float", "text", "currency", "percentage")
     3. description: "TBD" (will be generated later with full data)
 
@@ -238,7 +238,7 @@ Schema type guidelines:
 
 Example response:
 {{
-    "table_name": "pdf_{file_hash}_financial_summary",
+    "table_name": "pdf_{pdf_uuid}_financial_summary",
     "table_schema": {{
         "year": "integer",
         "revenue": "currency",
@@ -273,7 +273,7 @@ Respond with valid JSON only:
                 for header in headers
             }
             return TableSchema(
-                table_name=f"pdf_{file_hash}_table_{len(self.schemas) + 1}",
+                table_name=f"pdf_{pdf_uuid}_table_{table_index}",
                 table_schema=fallback_schema,
                 description="Auto-generated table schema"
             )
@@ -567,15 +567,15 @@ Respond with valid JSON only:
         text_chunks = []
         stored_tables = []
         current_table_info: Optional[TableInfo] = None
-        
-        # Generate file hash for unique table naming
-        with open(pdf_path, 'rb') as f:
-            file_hash = hashlib.md5(f.read()).hexdigest()[:8]
+
+
+        # Generate UUID for unique table naming
+        pdf_uuid = str(uuid.uuid4())[:8] 
 
         logger.info(f"Starting enhanced PDF extraction for file: {pdf_path}")
         print(f"\n=== Enhanced PDF Processing ===")
         print(f"File: {Path(pdf_path).name}")
-        print(f"File Hash: {file_hash}")
+        print(f"File UUID: {pdf_uuid}")
 
         try:
             with pdfplumber.open(pdf_path) as pdf:
@@ -638,30 +638,36 @@ Respond with valid JSON only:
                             print(f"Finalizing table: {current_table_info.name}")
                             success = self._store_table_with_schema(current_table_info)
                             if success:
+                                # Get updated description from schemas
+                                updated_schema = self.schemas.get(current_table_info.name, {})
                                 stored_tables.append({
                                     "name": current_table_info.name,
                                     "rows": len(current_table_info.data) - 1,  # Exclude header
-                                    "description": current_table_info.description
+                                    "description": updated_schema.get('description', current_table_info.description)
                                 })
 
                         # Process new table with Gemini
                         print("Analyzing new table with Gemini...")
                         context_text = self._get_context_text(pdf_path, page_num, table_idx)
-                        schema_info = self._query_gemini_for_schema(cleaned_table, context_text, file_hash)
+                        # Generate unique table index across all pages
+                        global_table_index = len(stored_tables) + 1
+                        schema_info = self._query_gemini_for_schema(cleaned_table, context_text, pdf_uuid, global_table_index)
                         
                         print(f"✓ Gemini analysis complete:")
                         print(f"  Table name: {schema_info.table_name}")
                         print(f"  Schema: {schema_info.table_schema}")
                         print(f"  Description: {schema_info.description}")
 
-                        # Save schema to file (description will be updated after storage)
+                        # Save initial schema to file (description will be updated after storage)
                         self.schemas[schema_info.table_name] = {
                             "schema": schema_info.table_schema,
-                            "description": "TBD - Will be generated after data storage",
-                            "file_hash": file_hash,
-                            "created_at": pd.Timestamp.now().isoformat()
+                            "description": schema_info.description,
+                            "pdf_uuid": pdf_uuid,
+                            "created_at": pd.Timestamp.now().isoformat(),
+                            "status": "processing"
                         }
                         self._save_schemas()
+                        print(f"✓ Saved initial schema for {schema_info.table_name}")
 
                         # Create new table info
                         current_table_info = TableInfo(
@@ -677,10 +683,12 @@ Respond with valid JSON only:
                     print(f"Finalizing last table: {current_table_info.name}")
                     success = self._store_table_with_schema(current_table_info)
                     if success:
+                        # Get updated description from schemas
+                        updated_schema = self.schemas.get(current_table_info.name, {})
                         stored_tables.append({
                             "name": current_table_info.name,
                             "rows": len(current_table_info.data) - 1,
-                            "description": current_table_info.description
+                            "description": updated_schema.get('description', current_table_info.description)
                         })
 
             print(f"\n=== Processing Complete ===")
@@ -693,7 +701,9 @@ Respond with valid JSON only:
             return {
                 "text_chunks": text_chunks,
                 "tables_info": stored_tables,
-                "schemas_saved": len(stored_tables)
+                "schemas_saved": len(stored_tables),
+                "pdf_name": Path(pdf_path).stem,
+                "pdf_uuid": pdf_uuid
             }
 
         except Exception as e:
@@ -824,10 +834,15 @@ Respond with valid JSON only:
                 detailed_description = self._generate_detailed_description(table_info, len(validated_rows))
                 print(f"✓ Generated detailed description ({len(detailed_description)} characters)")
 
-                # Update schema with detailed description
-                self.schemas[table_info.name]['description'] = detailed_description
-                self._save_schemas()
-                print(f"✓ Updated schema file with detailed description")
+                # Update schema with detailed description and mark as complete
+                if table_info.name in self.schemas:
+                    self.schemas[table_info.name]['description'] = detailed_description
+                    self.schemas[table_info.name]['status'] = 'complete'
+                    self.schemas[table_info.name]['rows_stored'] = len(validated_rows)
+                    self._save_schemas()
+                    print(f"✓ Updated schema file with detailed description")
+                else:
+                    logger.warning(f"Table {table_info.name} not found in schemas when updating description")
 
                 return True
             else:

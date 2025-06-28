@@ -51,11 +51,11 @@ class SchemaManager:
         """Get list of all table names."""
         return list(self.schemas.keys())
     
-    def get_tables_by_file(self, file_hash: str) -> List[Dict]:
-        """Get all tables created from a specific file."""
+    def get_tables_by_file(self, pdf_uuid: str) -> List[Dict]:
+        """Get all tables created from a specific PDF UUID."""
         tables = []
         for table_name, schema_info in self.schemas.items():
-            if schema_info.get('file_hash') == file_hash:
+            if schema_info.get('pdf_uuid') == pdf_uuid:
                 tables.append({
                     'table_name': table_name,
                     'description': schema_info.get('description', ''),
@@ -83,12 +83,12 @@ class SchemaManager:
     def get_schema_summary(self) -> Dict:
         """Get summary statistics about stored schemas."""
         total_tables = len(self.schemas)
-        file_hashes = set()
+        pdf_uuids = set()
         column_types = {}
         
         for schema_info in self.schemas.values():
-            if 'file_hash' in schema_info:
-                file_hashes.add(schema_info['file_hash'])
+            if 'pdf_uuid' in schema_info:
+                pdf_uuids.add(schema_info['pdf_uuid'])
             
             schema = schema_info.get('schema', {})
             for col_type in schema.values():
@@ -96,7 +96,7 @@ class SchemaManager:
         
         return {
             'total_tables': total_tables,
-            'unique_files': len(file_hashes),
+            'unique_files': len(pdf_uuids),
             'column_type_distribution': column_types,
             'schema_file_size': self.schema_file.stat().st_size if self.schema_file.exists() else 0
         }
@@ -155,8 +155,8 @@ class SchemaManager:
                     
                     f.write(f"**Created**: {schema_info.get('created_at', 'Unknown')}\n\n")
                     
-                    if 'file_hash' in schema_info:
-                        f.write(f"**Source File Hash**: `{schema_info['file_hash']}`\n\n")
+                    if 'pdf_uuid' in schema_info:
+                        f.write(f"**Source PDF UUID**: `{schema_info['pdf_uuid']}`\n\n")
                     
                     f.write("**Technical Schema**:\n\n")
                     f.write("| Column Name | Data Type | SQL Type |\n")
@@ -209,9 +209,9 @@ class SchemaManager:
         
         return issues
     
-    def cleanup_schemas(self, file_hashes_to_keep: Optional[List[str]] = None) -> int:
-        """Clean up schemas, optionally keeping only specified file hashes."""
-        if file_hashes_to_keep is None:
+    def cleanup_schemas(self, pdf_uuids_to_keep: Optional[List[str]] = None) -> int:
+        """Clean up schemas, optionally keeping only specified PDF UUIDs."""
+        if pdf_uuids_to_keep is None:
             # Interactive cleanup - remove entries older than 30 days
             cutoff_date = datetime.now().timestamp() - (30 * 24 * 60 * 60)
             to_remove = []
@@ -230,8 +230,8 @@ class SchemaManager:
             # Remove schemas not in the keep list
             to_remove = []
             for table_name, schema_info in self.schemas.items():
-                file_hash = schema_info.get('file_hash', '')
-                if file_hash not in file_hashes_to_keep:
+                pdf_uuid = schema_info.get('pdf_uuid', '')
+                if pdf_uuid not in pdf_uuids_to_keep:
                     to_remove.append(table_name)
         
         # Remove identified schemas

@@ -88,18 +88,19 @@ class TableAgent:
             logger.error(f"Failed to load table_schema.json: {e}")
             return {}
 
-    def process_query(self, query: str) -> str:
+    def process_query(self, query: str, pdf_uuid: str = None) -> str:
         """
         Generate and execute SQL query based on user query
 
         Args:
             query (str): The user query
+            pdf_uuid (str, optional): PDF UUID to filter tables
 
         Returns:
             str: Formatted query result or error message
         """
         try:
-            print(f"[DEBUG] Table Agent processing query: {query}")
+            print(f"[DEBUG] Table Agent processing query: {query} with PDF UUID: {pdf_uuid}")
 
             if not self.schema:
                 logger.error("No schema available for query processing")
@@ -109,8 +110,19 @@ class TableAgent:
                 if not self.schema:
                     return f"Error: Could not load schema for query: {query}"
 
+            # Filter schema by PDF UUID if provided
+            filtered_schema = self.schema
+            if pdf_uuid:
+                filtered_schema = {
+                    table_name: table_info for table_name, table_info in self.schema.items()
+                    if table_info.get('pdf_uuid') == pdf_uuid
+                }
+                
+                if not filtered_schema:
+                    return f"No tables found for the current document (UUID: {pdf_uuid}). Please upload a PDF first."
+
             # Generate SQL query
-            sql_query = self._generate_sql_query(query)
+            sql_query = self._generate_sql_query(query, filtered_schema)
 
             if "Cannot generate SQL" in sql_query:
                 logger.warning(f"LLM could not generate SQL for query: {query}")
@@ -124,16 +136,20 @@ class TableAgent:
             logger.error(f"Error in Table Agent: {e}", exc_info=True)
             return f"Error processing query: {query}"
 
-    def _generate_sql_query(self, query: str) -> str:
+    def _generate_sql_query(self, query: str, schema: dict = None) -> str:
         """
         Generate a MySQL SELECT query using the LLM
 
         Args:
             query (str): User query
+            schema (dict): Schema to use (if None, uses self.schema)
 
         Returns:
             str: Generated SQL query or error message
         """
+        if schema is None:
+            schema = self.schema
+            
         system_prompt = """
         You are an expert SQL query generator. Based on the provided database schema and user query, generate a valid SQL SELECT query for MySQL.
         - Use only the tables and columns defined in the schema.
@@ -154,9 +170,9 @@ class TableAgent:
         """
 
         formatted_prompt = system_prompt.format(
-            schema=json.dumps(self.schema, indent=2),
+            schema=json.dumps(schema, indent=2),
             query=query
-        )
+    )
         logger.debug(f"Formatted prompt for LLM: {formatted_prompt}")
 
         messages = [
