@@ -155,7 +155,7 @@ EventBot/
 │   │   │   ├── __init__.py        # Service package initializer
 │   │   │   ├── embedding_service.py # Handles text embeddings and Pinecone storage
 │   │   │   └── orchestrator.py    # Orchestrates interactions with ManagerAgent
-│   │   ├── test_manager_agent.py  # Test script for ManagerAgent (consider moving to tests/)
+│   │   ├── test_manager_agent.py  # Test script for ManagerAgent (currently in `src/backend/`, consider moving to `tests/`)
 │   │   └── utils/                 # Backend utility functions and helpers
 │   │       ├── __init__.py        # Utilities package initializer
 │   │       ├── helper.py          # Miscellaneous helper functions

@@ -5,6 +5,7 @@ A PDF document assistant with a FastAPI-based backend and a Streamlit-based fron
 ## 📖 Table of Contents
 
 - [🚀 Features](#-features)
+- [🏛️ Logic Architecture](#️-logic-architecture)
 - [📋 Prerequisites](#-prerequisites)
 - [🛠️ Installation & Setup](docs/INSTALLATION.md)
 - [🔑 API Keys Setup](docs/INSTALLATION.md#-api-keys-setup)
@@ -36,6 +37,13 @@ A PDF document assistant with a FastAPI-based backend and a Streamlit-based fron
 - **Streamlit Frontend**: User-friendly interface for uploading PDFs and interacting with the chatbot.
 - **RESTful API**: Clean REST endpoints for the backend, consumed by the frontend.
 - **Health Monitoring**: Built-in health checks and logging for the backend.
+- **Agentic System with LangGraph**: Utilizes LangGraph for defining and running the multi-agent system (ManagerAgent, RAGAgent, CombinerAgent) for complex query processing.
+- **Modular Design**: Clearly defined modules for agents, services, routing, and utilities.
+
+## 🏛️ Logic Architecture
+
+[Link to Logic Architecture Document will be added here once available]
+_(Please see `docs/ARCHITECTURE.md` for a detailed system architecture description based on the codebase)._
 
 ## 📋 Prerequisites
 
@@ -140,7 +148,7 @@ EventBot/
 │   │   │   ├── __init__.py        # Service package initializer
 │   │   │   ├── embedding_service.py # Handles text embeddings and Pinecone storage
 │   │   │   └── orchestrator.py    # Orchestrates interactions with ManagerAgent
-│   │   ├── test_manager_agent.py  # Test script for ManagerAgent (consider moving to tests/)
+│   │   ├── test_manager_agent.py  # Test script for ManagerAgent (currently in `src/backend/`, consider moving to `tests/`)
 │   │   └── utils/                 # Backend utility functions and helpers
 │   │       ├── __init__.py        # Utilities package initializer
 │   │       ├── helper.py          # Miscellaneous helper functions

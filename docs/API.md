@@ -122,10 +122,13 @@ This document provides detailed specifications for the available API endpoints, 
         ```json
         {
           "success": true,
-          "message": "PDF 'your_document_name.pdf' uploaded and processed successfully",
-          "filename": "your_document_name.pdf"
+          "message": "PDF 'your_document_name.pdf' processed and data stored.",
+          "filename": "your_document_name.pdf",
+          "tables_stored": 1,
+          "text_chunks_stored": 10
         }
         ```
+        *Note: `tables_stored` and `text_chunks_stored` indicate the number of tables found and stored in MySQL, and text segments vectorized and stored in Pinecone, respectively.*
 -   **Error Responses**:
     -   **Status Code**: `400 Bad Request`
         -   *Reason: No file part in the request.*

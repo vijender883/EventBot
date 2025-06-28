@@ -9,8 +9,8 @@
 # git clone https://github.com/vijender883/Chatbot_Pinecone_FastAPI_backend
 # cd Chatbot_Pinecone_FastAPI_backend
 # For now, assuming the name is the same as the issue was raised on this repo:
-git clone https://github.com/vijender883/Chatbot_Pinecone_flask_backend
-cd Chatbot_Pinecone_flask_backend
+git clone https://github.com/vijender883/EventBot
+cd EventBot
 ```
 
 ### 2. Create and Activate Virtual Environment
@@ -99,6 +99,9 @@ PINECONE_REGION="us-east-1"                  # Your Pinecone index region (e.g.,
 # Optional: Logging Level
 LOG_LEVEL=INFO # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
+# Database URL (Critical for table storage)
+DATABASE_URL="mysql+mysqlconnector://user:password@host:port/database" # Replace with your MySQL connection string
+
 # Frontend Configuration
 ENDPOINT="http://localhost:8000" # URL for the backend API (default for FastAPI)
 ```
@@ -171,17 +174,22 @@ curl http://localhost:${PORT:-8000}/health
 Expected successful output:
 ```json
 {
-  "status": "success",
-  "health": {
-    "gemini_api": true,
-    "pinecone_connection": true,
-    "embeddings": true,
-    "vector_store": true,
-    "overall_health": true
+  "status": "healthy",
+  "services": {
+    "manager_agent_health": {
+      "status": "healthy",
+      "combiner_agent_healthy": true,
+      "rag_agent_healthy": true,
+      "llm_healthy": true,
+      "table_tool_healthy": true
+    }
+    # Other services like EmbeddingService might also be included here
+    # depending on the full implementation of the health check.
   },
-  "healthy": true
+  "overall_health": true
 }
 ```
+*Note: The exact structure of `manager_agent_health` and other services might vary. Refer to the `/health` endpoint output of your running application for the most accurate details.*
 
 #### Upload a PDF (`/uploadpdf`)
 Replace `path/to/your_document.pdf` with an actual PDF file path.
@@ -311,10 +319,15 @@ curl -X POST -H "Content-Type: application/json" \
 This project should include automated tests to ensure reliability. Assuming `pytest` is the chosen test runner (a common choice for Python projects):
 
 1.  **Activate Virtual Environment**: Ensure your `venv` is active.
-2.  **Install Test Dependencies**: If not already included in `requirements.txt`, install pytest:
+2.  **Install Test Dependencies**: Development dependencies, including `pytest`, are listed in `requirements-dev.txt`. Install them using:
     ```bash
-    pip install pytest
+    pip install -r requirements-dev.txt
     ```
+3.  **Run Tests**: Navigate to the project root directory and execute:
+    ```bash
+    pytest
+    ```
+    Pytest will automatically discover and run tests (typically files named `test_*.py` or `*_test.py` in the `tests/` directory). Refer to the `README.md` for more details on testing.
 
 ## 🛠️ Troubleshooting
 
