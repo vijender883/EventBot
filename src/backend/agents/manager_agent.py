@@ -1,7 +1,7 @@
 import logging
 import json
 import mysql.connector
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -24,6 +24,7 @@ class AgentState(BaseModel):
     needs_rag: bool = False
     table_response: str = ""
     rag_response: str = ""
+    pdf_uuid: Optional[str] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -113,7 +114,7 @@ class ManagerAgent:
         """Manager node that analyzes the query and decides routing"""
         print(f"[DEBUG] Manager Node called with query: {state.query}")
 
-        schema_info = self._load_table_schema()
+        schema_info = self._load_table_schema(state.pdf_uuid)
         system_prompt = f"""
         You are a query analyzer that routes queries based on available data sources.
 
@@ -189,7 +190,7 @@ class ManagerAgent:
 
         try:
             if self.table_agent:
-                table_response = self.table_agent.process_query(state.query)
+                table_response = self.table_agent.process_query(state.query, state.pdf_uuid)
                 print(
                     f"[DEBUG] Table Node response from TableAgent: {table_response}")
             else:
@@ -209,8 +210,8 @@ class ManagerAgent:
         
         try:
             if self.chatbot_agent:
-                # Use the ChatbotAgent's answer_question function
-                response = self.chatbot_agent.answer_question(state.query)
+                # Use the ChatbotAgent's answer_question function with PDF UUID
+                response = self.chatbot_agent.answer_question(state.query, pdf_uuid=state.pdf_uuid)
                 rag_response = response.get("answer", f"RAG processing: {state.query}")
                 print(f"[DEBUG] RAG Node response from ChatbotAgent: {rag_response}")
             else:
@@ -278,21 +279,22 @@ class ManagerAgent:
         else:
             return "to_combiner"
     
-    def process_query(self, query: str) -> Dict[str, Any]:
+    def process_query(self, query: str, pdf_uuid: str = None) -> Dict[str, Any]:
         """
         Process a user query through the LangGraph workflow
         
         Args:
             query (str): The user's question
+            pdf_uuid (str, optional): UUID of the PDF being queried
             
         Returns:
             Dict[str, Any]: Response containing answer and metadata
         """
         try:
-            print(f"[DEBUG] Manager Agent processing query: {query}")
+            print(f"[DEBUG] Manager Agent processing query: {query} for PDF: {pdf_uuid}")
             
             # Create initial state
-            initial_state = AgentState(query=query)
+            initial_state = AgentState(query=query, pdf_uuid=pdf_uuid)
             
             # Run the workflow
             result = self.workflow.invoke(initial_state)
@@ -356,7 +358,7 @@ class ManagerAgent:
             }
     
 
-    def _load_table_schema(self) -> str:
+    def _load_table_schema(self, pdf_uuid: str = None) -> str:
         """Load table schema from JSON file with better error handling and path resolution"""
         try:
             # Try multiple possible paths for the schema file
@@ -387,6 +389,18 @@ class ManagerAgent:
             if not schema_data:
                 logger.warning("Schema file is empty")
                 return "Database schema not available - empty schema"
+            
+            # Filter by PDF UUID if provided
+            if pdf_uuid:
+                filtered_schema = {
+                    table_name: table_info for table_name, table_info in schema_data.items()
+                    if table_info.get('pdf_uuid') == pdf_uuid
+                }
+                schema_data = filtered_schema
+                
+                if not schema_data:
+                    logger.info(f"No schemas found for PDF UUID: {pdf_uuid}")
+                    return f"No database schemas available for the current document (UUID: {pdf_uuid})"
             
             # Convert schema to detailed readable format for the LLM
             schema_info = ""

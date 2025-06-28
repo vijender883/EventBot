@@ -19,7 +19,7 @@ class Config:
         self.ALLOWED_EXTENSIONS = os.getenv(
             "ALLOWED_EXTENSIONS", "pdf").split(",")
         self.MAX_FILE_SIZE = int(
-            os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10MB
+            os.getenv("MAX_FILE_SIZE", 2 * 1024 * 1024))  # 2MB
         
         # Flask/FastAPI Configuration
         self.HOST = os.getenv("HOST", "0.0.0.0")  # Added missing HOST

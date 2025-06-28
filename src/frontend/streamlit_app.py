@@ -1,3 +1,4 @@
+# src/frontend/streamlit_app.py
 import streamlit as st
 import requests
 import os
@@ -139,7 +140,7 @@ class APIClient:
             logger.warning(f"Connection test failed: {str(e)}")
             # Don't raise error here, just log the warning
     
-    def send_query(self, query: str) -> Optional[ChatResponse]:
+    def send_query(self, query: str, pdf_uuid: str = None) -> Optional[ChatResponse]:
         """Send user query to the answer endpoint with comprehensive error handling"""
         if not query or not query.strip():
             error = ValidationError(
@@ -156,6 +157,8 @@ class APIClient:
         try:
             url = f"{self.endpoint}/answer"
             payload = {"query": query.strip()}
+            if pdf_uuid:
+                payload["pdf_uuid"] = pdf_uuid
             
             logger.info(f"Sending query to {url}")
             logger.debug(f"Query payload: {payload}")
@@ -262,7 +265,7 @@ class APIClient:
             )
             return None
     
-    def upload_pdf(self, pdf_file) -> bool:
+    def upload_pdf(self, pdf_file) -> dict:
         """Upload PDF file to the server with enhanced error handling"""
         try:
             # Validate file
@@ -280,10 +283,10 @@ class APIClient:
                 )
             
             file_size = len(pdf_file.getvalue())
-            max_size = 50 * 1024 * 1024  # 50MB
+            max_size = 2 * 1024 * 1024  # 2MB
             if file_size > max_size:
                 raise ValidationError(
-                    f"File too large: {file_size / 1024 / 1024:.1f}MB (max: 50MB)",
+                    f"File too large: {file_size / 1024 / 1024:.1f}MB (max: 2MB)",
                     "FILE_TOO_LARGE",
                     {"file_size": file_size, "max_size": max_size}
                 )
@@ -302,7 +305,7 @@ class APIClient:
                 headers=headers,
                 timeout=600
             )
-            
+            logger.info(f"the whole result file {response}")
             logger.info(f"Upload response status: {response.status_code}")
             
             if response.status_code == 404:
@@ -328,11 +331,22 @@ class APIClient:
                     "UPLOAD_INVALID_JSON",
                     {"response_text": response.text[:500]}
                 )
-            
+
             success = data.get('success', False)
             logger.info(f"Upload result: {'success' if success else 'failed'}")
-            
-            return success
+
+            if success:
+                logger.info(f"pdf_uuid at upload pdf function: {data.get('pdf_uuid')}")
+                logger.info(f"data: {data}")
+                return {
+                    'success': True,
+                    'pdf_uuid': data.get('pdf_uuid'),
+                    'pdf_name': data.get('filename'),
+                    'filename': data.get('filename'),
+                    'display_name': data.get('display_name', f"{data.get('filename', 'Unknown')} ({data.get('pdf_uuid', 'No UUID')[:8]})")
+                }
+            else:
+                return {'success': False, 'error': data.get('message', 'Upload failed')}
             
         except ValidationError as e:
             ErrorHandler.log_error(
@@ -340,7 +354,7 @@ class APIClient:
                 "PDF Upload Validation",
                 e.message
             )
-            return False
+            return {'success': False, 'error': e.message}
             
         except requests.exceptions.Timeout as e:
             error = APIError(
@@ -353,7 +367,7 @@ class APIClient:
                 "PDF Upload Request",
                 "Upload took too long. Please try a smaller file."
             )
-            return False
+            return {'success': False, 'error': 'Upload timed out'}
             
         except requests.exceptions.ConnectionError as e:
             error = APIError(
@@ -366,7 +380,7 @@ class APIClient:
                 "PDF Upload Request",
                 "Cannot connect to the server for upload."
             )
-            return False
+            return {'success': False, 'error': 'Connection failed'}
             
         except Exception as e:
             error = APIError(
@@ -379,7 +393,7 @@ class APIClient:
                 "PDF Upload Request",
                 "An unexpected error occurred during upload."
             )
-            return False
+            return {'success': False, 'error': str(e)}
 
 class ChatUI:
     """Handles chat interface rendering and state management with error handling"""
@@ -399,6 +413,12 @@ class ChatUI:
                 st.session_state.debug_mode = False
             if "error_count" not in st.session_state:
                 st.session_state.error_count = 0
+            if 'current_pdf_uuid' not in st.session_state:
+                st.session_state.current_pdf_uuid = None
+            if 'current_pdf_name' not in st.session_state:
+                st.session_state.current_pdf_name = None
+            if 'pdf_display_name' not in st.session_state:
+                st.session_state.pdf_display_name = None
                 
             logger.info("Session state initialized successfully")
         except Exception as e:
@@ -441,7 +461,7 @@ class ChatUI:
             
             # Get response from API
             with st.spinner("Thinking..."):
-                response = self.api_client.send_query(user_input.strip())
+                response = self.api_client.send_query(user_input.strip(), st.session_state.current_pdf_uuid)
             
             if response:
                 # Add assistant response to chat
@@ -481,6 +501,12 @@ class ChatUI:
         try:
             st.title("🤖 PDF Assistant Chatbot")
             
+            # Display current PDF indicator
+            if st.session_state.current_pdf_uuid:
+                st.info(f"📄 Currently querying: **{st.session_state.pdf_display_name}**")
+            else:
+                st.warning("⚠️ No PDF uploaded. Please upload a PDF first for document-specific queries.")
+            
             # Debug mode toggle in sidebar
             with st.sidebar:
                 st.session_state.debug_mode = st.checkbox(
@@ -516,10 +542,13 @@ class PDFUploader:
             st.sidebar.title("📄 Document Upload")
             st.sidebar.markdown("Upload a PDF document to enhance the chatbot's knowledge.")
             
+            # Prominent warning about the actual file size limit
+            st.sidebar.error("⚠️ **IMPORTANT: Maximum file size is 2MB** (ignore the 200MB text below)")
+            
             uploaded_file = st.sidebar.file_uploader(
-                "Choose a PDF file",
+                "Choose a PDF file (2MB limit enforced)",
                 type=['pdf'],
-                help="Upload a PDF document for the chatbot to analyze (Max: 50MB)"
+                help="Upload a PDF document for the chatbot to analyze (Max: 2MB)"
             )
             
             if uploaded_file is not None:
@@ -527,11 +556,17 @@ class PDFUploader:
                 file_size = len(uploaded_file.getvalue())
                 file_size_mb = file_size / (1024 * 1024)
                 
-                st.sidebar.success(f"File selected: {uploaded_file.name}")
-                st.sidebar.info(f"Size: {file_size_mb:.1f} MB")
+                # Check file size immediately and show clear feedback
+                if file_size_mb > 2.0:
+                    st.sidebar.error(f"❌ **File rejected: {file_size_mb:.1f}MB exceeds 2MB limit**")
+                    st.sidebar.warning("Please select a smaller file (under 2MB)")
+                    return
                 
-                # Warn if file is large
-                if file_size_mb > 10:
+                st.sidebar.success(f"✅ File accepted: {uploaded_file.name}")
+                st.sidebar.info(f"📊 Size: {file_size_mb:.1f} MB (within 2MB limit)")
+                
+                # Warn if file is large but acceptable
+                if file_size_mb > 1:
                     st.sidebar.warning("⚠️ Large file detected. Upload may take longer.")
                 
                 # Upload button
@@ -544,19 +579,33 @@ class PDFUploader:
                 "PDF Upload Interface",
                 "Error in upload interface"
             )
-    
+
+
+
+
+
+
+
+
     def _handle_pdf_upload(self, pdf_file):
         """Handle PDF file upload with detailed error handling"""
         try:
             with st.spinner("Uploading PDF..."):
-                success = self.api_client.upload_pdf(pdf_file)
+                upload_result = self.api_client.upload_pdf(pdf_file)
             
-            if success:
+            if upload_result.get('success'):
+                # Store PDF info in session state
+                logger.info(f"pdf uuid: {upload_result.get('pdf_uuid')}")
+                st.session_state.current_pdf_uuid = upload_result.get('pdf_uuid')
+                st.session_state.current_pdf_name = upload_result.get('filename')
+                st.session_state.pdf_display_name = upload_result.get('filename')
+                
                 st.sidebar.success("✅ PDF uploaded successfully!")
+                st.sidebar.info(f"📄 Active PDF: **{st.session_state.pdf_display_name}**")
                 st.sidebar.balloons()
                 logger.info(f"PDF uploaded successfully: {pdf_file.name}")
             else:
-                st.sidebar.error("❌ Failed to upload PDF. Please try again.")
+                st.sidebar.error(f"❌ Upload failed: {upload_result.get('error', 'Unknown error')}")
                 
                 # Provide helpful suggestions
                 with st.sidebar.expander("💡 Troubleshooting"):

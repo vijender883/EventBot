@@ -117,10 +117,14 @@ async def process_pdf_upload(file: UploadFile) -> dict:
             print("\n=== Starting Enhanced PDF Processing ===")
             processing_result = pdf_processor.extract_and_store_content(temp_file_path)
 
+            # Get the PDF name and UUID from processing result
+            pdf_name = processing_result.get("pdf_name", filename)
+            pdf_uuid = processing_result.get("pdf_uuid")
+
             # Store text embeddings in Pinecone using Google Gemini
             print("\n=== Storing Text Embeddings ===")
             text_chunks_stored = embedding_service.store_text_embeddings(
-                processing_result["text_chunks"], filename
+                processing_result["text_chunks"], pdf_uuid, pdf_name
             )
             print(f"✓ Stored {text_chunks_stored} text chunks in Pinecone")
 
@@ -139,6 +143,7 @@ async def process_pdf_upload(file: UploadFile) -> dict:
 
             print(f"\n=== Processing Summary ===")
             print(f"✓ File: {filename}")
+            print(f"✓ PDF UUID: {pdf_uuid}")
             print(f"✓ Text chunks stored in Pinecone: {text_chunks_stored}")
             print(f"✓ Tables stored in MySQL: {tables_stored}")
             print(f"✓ Schemas saved to src/backend/utils/table_schema.json: {processing_result.get('schemas_saved', 0)}")
@@ -150,11 +155,14 @@ async def process_pdf_upload(file: UploadFile) -> dict:
                 "success": True,
                 "message": "PDF processed successfully with Gemini-enhanced schema inference",
                 "filename": filename,
+                "pdf_name": pdf_name,
+                "pdf_uuid": pdf_uuid,
                 "tables_stored": tables_stored,
                 "text_chunks_stored": text_chunks_stored,
                 "schemas_created": processing_result.get("schemas_saved", 0),
                 "table_details": table_summary,
-                "processing_method": "enhanced_gemini"
+                "processing_method": "enhanced_gemini",
+                "display_name": f"{pdf_name} ({pdf_uuid[:8]})"
             }
 
         finally:
