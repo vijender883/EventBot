@@ -283,7 +283,7 @@ class APIClient:
                 )
             
             file_size = len(pdf_file.getvalue())
-            max_size = 50 * 1024 * 1024  # 50MB
+            max_size = 2 * 1024 * 1024  # 2MB
             if file_size > max_size:
                 raise ValidationError(
                     f"File too large: {file_size / 1024 / 1024:.1f}MB (max: 50MB)",
@@ -341,9 +341,9 @@ class APIClient:
                 return {
                     'success': True,
                     'pdf_uuid': data.get('pdf_uuid'),
-                    'pdf_name': data.get('pdf_name'),
+                    'pdf_name': data.get('filename'),
                     'filename': data.get('filename'),
-                    'display_name': data.get('display_name', f"{data.get('pdf_name', 'Unknown')} ({data.get('pdf_uuid', 'No UUID')[:8]})")
+                    'display_name': data.get('display_name', f"{data.get('filename', 'Unknown')} ({data.get('pdf_uuid', 'No UUID')[:8]})")
                 }
             else:
                 return {'success': False, 'error': data.get('message', 'Upload failed')}
@@ -545,7 +545,7 @@ class PDFUploader:
             uploaded_file = st.sidebar.file_uploader(
                 "Choose a PDF file",
                 type=['pdf'],
-                help="Upload a PDF document for the chatbot to analyze (Max: 50MB)"
+                help="Upload a PDF document for the chatbot to analyze (Max: 2MB)"
             )
             
             if uploaded_file is not None:
@@ -557,7 +557,7 @@ class PDFUploader:
                 st.sidebar.info(f"Size: {file_size_mb:.1f} MB")
                 
                 # Warn if file is large
-                if file_size_mb > 10:
+                if file_size_mb > 1:
                     st.sidebar.warning("⚠️ Large file detected. Upload may take longer.")
                 
                 # Upload button
