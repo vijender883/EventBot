@@ -64,44 +64,53 @@ This document provides detailed specifications for the available API endpoints, 
 -   **Request Body**: None.
 -   **Successful Response (All systems healthy)**:
     -   **Status Code**: `200 OK`
-    -   **Body**:
+    -   **Body (Example based on `Orchestrator.get_service_health` and `ManagerAgent.health_check`)**:
         ```json
         {
-          "status": "success",
-          "health": {
-            "gemini_api": true,
-            "pinecone_connection": true,
-            "embeddings": true,
-            "vector_store": true,
-            "overall_health": true
-          },
-          "healthy": true
+            "orchestrator": true, // Indicates orchestrator itself is responsive
+            "manager_agent": true, // Overall health of the manager agent
+            "overall_health": true, // Top-level overall health
+            "active_agent": "manager", // Indicates which agent type is active in orchestrator
+            "manager_details": { // Detailed health from ManagerAgent
+                "manager_agent": true,
+                "llm_connection": true,
+                "workflow_ready": true,
+                "combiner_agent": true, // Health of sub-agents/components
+                "chatbot_agent_available": true,
+                "table_agent_available": true, // Assuming table_agent is also checked
+                "overall_health": true // ManagerAgent's own overall_health
+            }
         }
         ```
+        *Note: The exact structure can vary based on which agent is active in the `Orchestrator` and the details included from its specific health check. The example above assumes `ManagerAgent` is active.*
 -   **Degraded Service Response (One or more critical checks failed)**:
     -   **Status Code**: `503 Service Unavailable` (This is returned if `overall_health` is `false`)
-    -   **Body Example (Pinecone connection failed)**:
+    -   **Body Example (ManagerAgent or LLM connection failed)**:
         ```json
         {
-          "status": "success", // The health check endpoint itself responded
-          "health": {
-            "gemini_api": true,
-            "pinecone_connection": false, // Critical failure
-            "embeddings": true,
-            "vector_store": false,      // Dependent on Pinecone
-            "overall_health": false     // Overall health is false
-          },
-          "healthy": false
+          "orchestrator": true,
+          "manager_agent": false, // Manager agent reported an issue
+          "overall_health": false,
+          "active_agent": "manager",
+          "manager_details": {
+            "manager_agent": true,
+            "llm_connection": false, // Specific failure point
+            "workflow_ready": true,
+            "combiner_agent": true,
+            "chatbot_agent_available": true,
+            "table_agent_available": true,
+            "overall_health": false
+          }
         }
         ```
 -   **Error Response (Exception during the health check process itself)**:
     -   **Status Code**: `500 Internal Server Error`
-    -   **Body Example (ChatbotAgent not initialized)**:
+    -   **Body Example (Orchestrator failed to initialize agents)**:
         ```json
         {
           "status": "error",
-          "message": "ChatbotAgent not initialized",
-          "healthy": false
+          "message": "Orchestrator initialized without any agents - limited functionality.",
+          "healthy": false // Or a more detailed error structure from FastAPI
         }
         ```
 
@@ -111,7 +120,7 @@ This document provides detailed specifications for the available API endpoints, 
 
 -   **Method**: `POST`
 -   **Path**: `/uploadpdf`
--   **Description**: Uploads a PDF file to the server. The server then processes this file by extracting its text, generating vector embeddings from the content, and storing these embeddings in the Pinecone vector database for future querying.
+-   **Description**: Uploads a PDF file to the server. The server then processes this file by extracting its text and tables, generating vector embeddings from the text content, storing embeddings in Pinecone, and table data in MySQL. A unique `pdf_uuid` is generated and returned for context-specific querying.
 -   **Headers**:
     -   `Content-Type`: `multipart/form-data` (Automatically set by HTTP clients for file uploads).
 -   **Request Body**:
@@ -124,11 +133,12 @@ This document provides detailed specifications for the available API endpoints, 
           "success": true,
           "message": "PDF 'your_document_name.pdf' processed and data stored.",
           "filename": "your_document_name.pdf",
+          "pdf_uuid": "unique-pdf-identifier-string",
           "tables_stored": 1,
           "text_chunks_stored": 10
         }
         ```
-        *Note: `tables_stored` and `text_chunks_stored` indicate the number of tables found and stored in MySQL, and text segments vectorized and stored in Pinecone, respectively.*
+        *Note: `tables_stored` and `text_chunks_stored` indicate the number of tables found and stored in MySQL, and text segments vectorized and stored in Pinecone, respectively. `pdf_uuid` is essential for context-specific querying.*
 -   **Error Responses**:
     -   **Status Code**: `400 Bad Request`
         -   *Reason: No file part in the request.*
@@ -174,16 +184,16 @@ This document provides detailed specifications for the available API endpoints, 
             }
             ```
     -   **Status Code**: `500 Internal Server Error`
-        -   *Reason: Core service (like ChatbotAgent) not initialized, or an unexpected error occurred during PDF processing or storage.*
-        -   **Body (Example: ChatbotAgent not initialized)**:
+        -   *Reason: Core services (like `PDFProcessor`, `EmbeddingService`) not initialized, or an unexpected error occurred during PDF processing or storage.*
+        -   **Body (Example: Service not initialized)**:
             ```json
             {
               "success": false,
               "message": "Service temporarily unavailable",
-              "error": "ChatbotAgent not initialized"
+              "error": "Required service not initialized"
             }
             ```
-        -   **Body (Example: PDF processing failure within the agent)**:
+        -   **Body (Example: PDF processing failure)**:
             ```json
             {
               "success": false,
@@ -206,24 +216,32 @@ This document provides detailed specifications for the available API endpoints, 
 
 -   **Method**: `POST`
 -   **Path**: `/answer`
--   **Description**: Submits a natural language question (query) related to the content of previously uploaded and processed PDF documents. The API leverages its AI model and vector search capabilities to find relevant information and generate a coherent answer.
+-   **Description**: Submits a natural language question (query) related to the content of a specific, previously uploaded PDF document (identified by `pdf_uuid`). The API leverages its AI model and vector search capabilities to find relevant information and generate a coherent answer.
 -   **Headers**:
     -   `Content-Type`: `application/json` (Required)
 -   **Request Body**:
     -   **Structure**:
         ```json
         {
-          "query": "Your question about the PDF content?"
+          "query": "Your question about the PDF content?",
+          "pdf_uuid": "unique-pdf-identifier-string"
         }
         ```
     -   **Parameters**:
         -   `query` (string, required): The natural language question. It must be a non-empty string.
+        -   `pdf_uuid` (string, required): The unique identifier for the PDF document this query pertains to. This UUID is returned upon successful PDF upload.
 -   **Successful Response**:
     -   **Status Code**: `200 OK`
     -   **Body**:
         ```json
         {
-          "answer": "The AI-generated answer based on the relevant document content."
+          "answer": "The AI-generated answer based on the relevant document content.",
+          "success": true,
+          "error": null,
+          "metadata": {
+              "used_table": false, // Example: true if TableAgent was used
+              "used_rag": true     // Example: true if RAGAgent was used
+          }
         }
         ```
 -   **Error Responses**:
@@ -231,27 +249,27 @@ This document provides detailed specifications for the available API endpoints, 
         -   *Reason: Request body is not valid JSON or `Content-Type` header is not `application/json`.*
             ```json
             {
-              "answer": "Invalid request format. Please provide a valid JSON request.",
+              "answer": "Invalid request format. Please provide a valid JSON request body.",
               "success": false,
               "error": "No JSON data provided"
             }
             ```
-        -   *Reason: The `query` field is missing from the JSON body or is an empty string.*
+        -   *Reason: The `query` or `pdf_uuid` field is missing from the JSON body, is an empty string, or not a valid UUID format.*
             ```json
             {
-              "answer": "Please provide a valid question.",
+              "answer": "Please provide a valid question and PDF UUID.",
               "success": false,
-              "error": "Empty query provided"
+              "error": "Missing or invalid query or pdf_uuid"
             }
             ```
     -   **Status Code**: `500 Internal Server Error`
-        -   *Reason: Core service (like ChatbotAgent) not initialized, or an error occurred during AI processing or question answering.*
-        -   **Body (Example: ChatbotAgent not initialized)**:
+        -   *Reason: Core service (like `ManagerAgent` or its sub-agents) not initialized, or an error occurred during AI processing or question answering.*
+        -   **Body (Example: Agent not initialized)**:
             ```json
             {
               "answer": "Service temporarily unavailable. Please try again later.",
               "success": false,
-              "error": "ChatbotAgent not initialized"
+              "error": "Agent not initialized" // Or a more specific error from the backend
             }
             ```
         -   **Body (Example: General error during answer generation)**:
