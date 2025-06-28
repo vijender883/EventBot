@@ -170,17 +170,68 @@ EventBot/
 -   **`app.py`**: Initializes the FastAPI app, loads configuration, sets up the `Orchestrator` (which initializes agents), and includes API routers.
 -   **`src/backend/routes/chat.py`**: Defines API endpoints (`/health`, `/uploadpdf`, `/answer`) and delegates requests to appropriate handlers (e.g., `Orchestrator` for Q&A, `upload_pdf` util for uploads).
 -   **`src/backend/services/orchestrator.py`**: Central coordinator that uses `ManagerAgent` for processing queries.
--   **`src/backend/agents/manager_agent.py`**: Core agent using LangGraph. Analyzes queries, routes them to table or RAG processing (using `ChatbotAgent`), and combines results with `CombinerAgent`.
--   **`src/backend/agents/rag_agent.py` (Class `ChatbotAgent`)**: Specialized agent for RAG, performing similarity search in Pinecone and generating answers with Gemini.
--   **`src/backend/agents/combiner_agent.py`**: Merges responses from different sources into a single, coherent answer using an LLM.
+- **`src/backend/agents/manager_agent.py`**: Core agent using LangGraph. Analyzes queries, routes them to `TableAgent` for structured data queries or `ChatbotAgent` (RAG) for unstructured information, and then combines results using `CombinerAgent`.
+- **`src/backend/agents/table_agent.py`**: Specialized agent for querying structured data from MySQL tables based on the query and PDF context.
+- **`src/backend/agents/rag_agent.py` (Class `ChatbotAgent`)**: Specialized agent for RAG, performing similarity search in Pinecone and generating answers with Gemini based on unstructured text.
+- **`src/backend/agents/combiner_agent.py`**: Merges responses from different sources (e.g., `TableAgent` and `ChatbotAgent`) into a single, coherent answer using an LLM.
 -   **`src/backend/services/embedding_service.py`**: Manages text embedding generation (Gemini) and storage/retrieval in Pinecone.
--   **`src/backend/utils/pdf_processor.py`**: Extracts text and tables from PDFs. Stores table data in MySQL.
+- **`src/backend/utils/pdf_processor.py`**: Extracts text and tables from PDFs. Stores table data in MySQL and provides schema information.
 -   **`src/backend/utils/upload_pdf.py`**: Handles the PDF upload process, coordinating `PDFProcessor` and `EmbeddingService`.
 -   **`src/backend/config.py`**: Manages application configuration from environment variables.
 -   **`src/backend/models.py`**: Contains Pydantic models for API request/response validation.
 
 **Frontend:**
 -   **`src/frontend/streamlit_app.py`**: A Streamlit application providing the user interface. It interacts with the backend API.
+
+### Project Structure
+```
+EventBot/
+├── .env                           # Local environment variables (gitignored)
+├── .env.template                  # Template for .env file
+├── .git/                          # Git version control directory
+├── .gitignore                     # Specifies intentionally untracked files for Git
+├── README.md                      # This guide
+├── Makefile                       # Defines common tasks like running, testing, linting
+├── app.py                         # Main FastAPI application entry point
+├── requirements.txt               # Python package dependencies
+├── requirements-dev.txt           # Development-specific dependencies
+├── start.sh                       # Script for starting backend
+├── src/                           # Main source code directory
+│   ├── backend/                   # Source code for the FastAPI backend
+│   │   ├── __init__.py            # Package initializer
+│   │   ├── agents/                # Houses different agent implementations
+│   │   │   ├── base.py            # Defines a base class for agents
+│   │   │   ├── combiner_agent.py  # Agent for combining responses
+│   │   │   ├── manager_agent.py   # Agent for orchestrating query processing (uses LangGraph)
+│   │   │   ├── rag_agent.py       # Implements the RAG-based chatbot logic (ChatbotAgent)
+│   │   │   └── table_agent.py     # Agent for querying structured table data
+│   │   ├── config.py              # Centralized backend application configuration
+│   │   ├── models.py              # Pydantic models for API requests/responses
+│   │   ├── routes/                # Defines API endpoints
+│   │   │   ├── __init__.py        # Router package initializer
+│   │   │   └── chat.py            # Chat-related API endpoint definitions
+│   │   ├── services/              # Service layer
+│   │   │   ├── __init__.py        # Service package initializer
+│   │   │   ├── embedding_service.py # Handles text embeddings and Pinecone storage
+│   │   │   └── orchestrator.py    # Orchestrates interactions with ManagerAgent
+│   │   ├── utils/                 # Backend utility functions and helpers
+│   │   │   ├── __init__.py        # Utilities package initializer
+│   │   │   ├── helper.py          # Miscellaneous helper functions
+│   │   │   ├── pdf_processor.py   # PDF parsing and MySQL table storage
+│   │   │   ├── schema_manager.py  # Manages table schemas (e.g., from table_schema.json)
+│   │   │   ├── table_schema.json  # Stores inferred schemas for tables from PDFs
+│   │   │   └── upload_pdf.py      # PDF upload handling utilities
+│   └── frontend/                  # Source code for the Streamlit frontend
+│       └── streamlit_app.py       # Main Streamlit application file
+├── tests/                         # Directory for automated tests
+│   ├── conftest.py
+│   ├── test_agents/
+│   │   └── test_rag_agent.py      # Example test for RAG agent
+│   └── test_routes/
+│       └── test_chat_routes.py    # Example test for chat routes
+```
+*Note: `src/backend/test_manager_agent.py` was present in the original structure; ideally, tests should reside in the `tests/` directory.*
+
 
 ### Environment Variables
 
@@ -193,9 +244,10 @@ The application uses environment variables for configuration. These are typicall
 -   `PINECONE_DIMENSION`: The dimension of vectors for Pinecone (e.g., 768 for `models/embedding-001`).
 -   `PINECONE_CLOUD`: The cloud provider for your Pinecone index (e.g., `aws`).
 -   `PINECONE_REGION`: The region of your Pinecone index (e.g., `us-east-1`).
--   `DATABASE_URL`: Connection string for your MySQL database (e.g., `mysql+mysqlconnector://user:password@host:port/database`). **This is new and critical for table storage.**
+-   `DATABASE_URL`: Connection string for your MySQL database (e.g., `mysql+mysqlconnector://user:password@host:port/database`). Critical for table storage and querying.
 -   `APP_ENV`: Set to `development` or `production`.
 -   `PORT`: Port for the backend server (defaults to `8000` or `5000`).
+-   `LOG_LEVEL`: Optional, sets the logging level (e.g., `DEBUG`, `INFO`).
 
 **Frontend Variables:**
 -   `ENDPOINT`: The URL of the backend API (e.g., `http://localhost:5000`).
@@ -204,8 +256,11 @@ The application uses environment variables for configuration. These are typicall
 
 *(This section outlines general steps. Specific test setup might vary.)*
 
-For information on installing test dependencies, see the [Detailed Installation and Setup Guide](docs/INSTALLATION.md#-running-tests).
-
+1.  **Install Test Dependencies**: If you haven't already, install development dependencies:
+    ```bash
+    pip install -r requirements-dev.txt
+    ```
+2.  **Configure Environment for Tests**: Ensure your `.env` file (or environment variables) are set up correctly, as tests might interact with external services if not properly mocked.
 3.  **Run Tests**: Navigate to the project root directory and execute:
     ```bash
     pytest
@@ -222,7 +277,7 @@ For troubleshooting common installation and setup issues, refer to the [Detailed
 
 For more verbose error output locally:
 1.  Set `APP_ENV=development` in your `.env` file. This often enables FastAPI's debug mode.
-2.  Optionally, set `LOG_LEVEL=DEBUG` in `.env` for more detailed application logs.
+2.  Optionally, set `LOG_LEVEL=DEBUG` in `.env` for more detailed application logs (our application uses this).
 3.  Run the app (e.g., `uvicorn app:app --reload`).
 
 ## 📊 Monitoring
@@ -233,12 +288,12 @@ The `/health` endpoint (see [API Endpoints](#-api-endpoints)) provides detailed 
 
 ### Logs
 
--   **Local Development**: Logs are output to the console where `uvicorn app:app` is running. Adjust `LOG_LEVEL` in `.env` for desired verbosity.
+-   **Local Development**: Logs are output to the console where `uvicorn app:app` is running. Adjust `LOG_LEVEL` in `.env` for desired verbosity (e.g., `INFO`, `DEBUG`).
 -   **Render Deployment**: Access and monitor logs via the Render dashboard for your service. This is crucial for diagnosing issues in the production environment.
 
 Key information to look for in logs:
 -   Successful/failed PDF uploads and processing durations (including table and text chunk counts).
--   Question answering request details, including routing decisions by `ManagerAgent`.
+-   Question answering request details, including routing decisions by `ManagerAgent` and responses from `TableAgent` or `ChatbotAgent`.
 -   Errors from external services (Gemini, Pinecone, MySQL).
 -   Any unexpected application exceptions or tracebacks.
 
@@ -247,24 +302,27 @@ Key information to look for in logs:
 -   **API Keys & Database Credentials**: Handled via environment variables (`.env` locally, Render's environment settings). Never hardcode credentials. Ensure `.env` is in `.gitignore`.
 -   **File Uploads**:
     *   `werkzeug.utils.secure_filename` is used to sanitize filenames.
-    *   File type and size are validated as per `ALLOWED_EXTENSIONS` and `MAX_FILE_SIZE` in the app configuration.
+    *   File type and size are validated as per `ALLOWED_EXTENSIONS` and `MAX_FILE_SIZE` in the app configuration (`src/backend/config.py`).
 -   **Input Validation**: Pydantic models (`src/backend/models.py`) are used for request validation in API endpoints.
--   **SQL Injection**: Use of SQLAlchemy ORM or parameterized queries by `PDFProcessor` helps mitigate SQL injection risks when interacting with MySQL. Ensure any direct SQL construction is done safely.
--   **CORS**: FastAPI handles CORS through `CORSMiddleware`. Ensure it's configured securely, especially in production, by specifying allowed origins, methods, and headers. For example:
+-   **SQL Injection**:
+    *   `TableAgent` uses an LLM to generate SQL queries. While this is powerful, it requires careful prompt engineering to prevent SQL injection. The current implementation relies on the LLM's ability to generate safe SQL based on schema and query descriptions.
+    *   `PDFProcessor` when storing tables uses parameterized queries or ORM-like behavior if applicable, which is generally safer.
+    *   **Recommendation**: Implement strict validation and sanitization of any table/column names or values derived from LLM output before using them in SQL queries, or use query builders that parameterize inputs.
+-   **CORS**: FastAPI handles CORS through `CORSMiddleware`. Ensure it's configured securely, especially in production, by specifying allowed origins, methods, and headers. Example from `src/backend/__init__.py`:
     ```python
     from fastapi.middleware.cors import CORSMiddleware
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["https://your.frontend.domain.com"], # Or ["*"] for development
+        allow_origins=["*"], # Adjust for production
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
     ```
 -   **Error Handling**: FastAPI has built-in support for returning structured JSON error responses (e.g., using `HTTPException`) and allows for custom exception handlers. This helps avoid exposing raw stack traces.
--   **Dependency Management**: Keep `requirements.txt` up-to-date. Regularly audit dependencies for vulnerabilities using tools like `pip-audit` or GitHub's Dependabot.
--   **HTTPS**: Render automatically provides HTTPS for deployed services.
+-   **Dependency Management**: Keep `requirements.txt` and `requirements-dev.txt` up-to-date. Regularly audit dependencies for vulnerabilities using tools like `pip-audit` or GitHub's Dependabot.
+-   **HTTPS**: Render automatically provides HTTPS for deployed services. For local development, consider using a reverse proxy like Caddy or Nginx if HTTPS is needed.
 
 ## 📝 License
 
@@ -277,10 +335,10 @@ Contributions are welcome! Please adhere to the following process:
 1.  **Fork the Repository**: Create your own fork on GitHub.
 2.  **Create a Branch**: `git checkout -b feature/your-new-feature` or `bugfix/issue-description`.
 3.  **Develop**: Make your changes.
-4.  **Test**: Add and run tests for your changes using `pytest`.
+4.  **Test**: Add and run tests for your changes using `pytest`. Ensure tests cover new functionality and don't break existing features.
 5.  **Commit**: Write clear, concise commit messages.
 6.  **Push**: Push your branch to your fork: `git push origin your-branch-name`.
-7.  **Pull Request**: Open a PR against the `main` branch of the original repository. Clearly describe your changes and link any relevant issues.
+7.  **Pull Request**: Open a PR against the `main` branch of the original repository. Clearly describe your changes and link any relevant issues. Ensure your PR passes any CI checks.
 
 ## 📞 Support
 
@@ -292,7 +350,7 @@ If you encounter issues or have questions:
     *   Steps to reproduce.
     *   Expected vs. actual behavior.
     *   Error messages and relevant logs.
-    *   Your environment (OS, Python version).
+    *   Your environment (OS, Python version, relevant package versions).
 -   For Render-specific deployment issues, consult the [Render documentation](https://render.com/docs).
 
 ---
