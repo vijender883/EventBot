@@ -25,6 +25,8 @@ class AgentState(BaseModel):
     table_response: str = ""
     rag_response: str = ""
     pdf_uuid: Optional[str] = None
+    table_sub_query: str = ""
+    rag_sub_query: str = ""
 
     class Config:
         arbitrary_types_allowed = True
@@ -116,111 +118,163 @@ class ManagerAgent:
 
         schema_info = self._load_table_schema(state.pdf_uuid)
         system_prompt = f"""
-        You are a query analyzer that routes queries based on available data sources.
+        You are a query analyzer that routes queries and generates sub-queries for specialized agents.
 
         AVAILABLE DATABASE SCHEMA:
         {schema_info}
 
+        Your task is to:
+        1. Determine the routing strategy
+        2. Generate specific sub-queries for each agent
+
         ROUTING RULES:
-        Analyze the user query and determine the appropriate route:
+        - "table": Query can be answered using database tables only
+        - "rag": Query needs general knowledge/document content only  
+        - "both": Query needs both database data AND external knowledge
 
-        1. "table" - Use when the query can be answered using the database tables above
-        - Queries about specific data fields (ID, Name, Age, City, Occupation, Salary, Product, Category, Price, Stock, etc.)
-        - Statistical queries (count, sum, average, min, max)
-        - Data filtering and aggregation queries
-        - Comparative analysis using table data
+        RESPONSE FORMAT:
+        Return ONLY a valid JSON object (no markdown, no explanations) with:
+        {{
+        "status": "rag" | "table" | "both",
+        "rag_agent_sub_query": "Clear sub-query for RAG if needed",
+        "table_agent_sub_query": "Clear sub-query for Table agent if needed"
+        }}
 
-        2. "rag" - Use for general knowledge queries not answerable from the database
-        - Biographical information not in tables
-        - Historical facts and general knowledge
-        - Explanations of concepts or definitions
-        - Questions about entities not present in the database
+        SUB-QUERY GUIDELINES:
+        - For RAG queries: Generate natural language questions about general knowledge, concepts, or document content
+        - For Table queries: Generate natural language questions about data that can be found in the database tables
+        - DO NOT generate SQL queries - only natural language questions that the table agent will convert to SQL
+        - Focus on what specific data or information each agent should retrieve
+        - For "both" status: Create complementary sub-queries that together answer the original question
 
-        3. "both" - Use when query needs database data AND external knowledge
-        - Questions requiring data analysis plus contextual explanation
-        - Queries needing database facts supplemented with general knowledge
+        EXAMPLES:
+        Original: "How many times did Brazil win the FIFA World Cup and what leagues does Europe have?"
+        {{
+        "status": "both",
+        "rag_agent_sub_query": "What are the major football leagues in Europe?",
+        "table_agent_sub_query": "How many times did Brazil win the World Cup according to the data?"
+        }}
 
-        DECISION PROCESS:
-        1. First check if the query asks for data that exists in the schema columns
-        2. If yes and no external knowledge needed → "table"
-        3. If no database data needed → "rag" 
-        4. If both database data and general knowledge needed → "both"
-
-        Respond with only one word: "table", "rag", or "both"
+        Original: "What is the average salary in the employee table?"
+        {{
+        "status": "table", 
+        "rag_agent_sub_query": "",
+        "table_agent_sub_query": "What is the average salary of all employees?"
+        }}
         """
 
         messages = [
             SystemMessage(content=system_prompt),
-            HumanMessage(content=f"Query: {state.query}")
+            HumanMessage(content=f"Original Query: {state.query}")
         ]
 
         try:
             response = self.llm.invoke(messages)
-            decision = response.content.strip().lower()
+            logger.info(f"the manager llm output before json extraction: {response}")
+            
+            # Extract JSON from response, handling markdown code blocks
+            content = response.content.strip()
+            
+            # Remove markdown code block markers if present
+            if content.startswith('```json'):
+                content = content.replace('```json\n', '').replace('```', '').strip()
+            elif content.startswith('```'):
+                content = content.replace('```\n', '').replace('```', '').strip()
+            
+            # Try to find JSON within the content if still not valid
+            if not content.startswith('{'):
+                # Look for JSON block within the content
+                start_idx = content.find('{')
+                end_idx = content.rfind('}')
+                if start_idx != -1 and end_idx != -1:
+                    content = content[start_idx:end_idx+1]
+            
+            logger.info(f"Cleaned content for JSON parsing: {content}")
+            result = json.loads(content)
+            
+            decision = result.get("status", "rag").lower()
+            rag_sub_query = result.get("rag_agent_sub_query", "")
+            table_sub_query = result.get("table_agent_sub_query", "")
 
-            # Set flags based on decision
+            logger.info(f"the manager llm output after json extraction: {result}")
+            # Set flags and sub-queries based on decision
             if decision == "table":
                 state.needs_table = True
                 state.needs_rag = False
+                state.table_sub_query = table_sub_query or state.query
             elif decision == "rag":
                 state.needs_table = False
                 state.needs_rag = True
+                state.rag_sub_query = rag_sub_query or state.query
             elif decision == "both":
                 state.needs_table = True
                 state.needs_rag = True
+                state.table_sub_query = table_sub_query or state.query
+                state.rag_sub_query = rag_sub_query or state.query
             else:
                 # Default to RAG for unknown cases
                 state.needs_table = False
                 state.needs_rag = True
+                state.rag_sub_query = state.query
 
-            print(
-                f"[DEBUG] Manager decision: {decision} (table: {state.needs_table}, rag: {state.needs_rag})")
+            print(f"[DEBUG] Manager decision: {decision}")
+            print(f"[DEBUG] Table sub-query: {getattr(state, 'table_sub_query', 'None')}")
+            print(f"[DEBUG] RAG sub-query: {getattr(state, 'rag_sub_query', 'None')}")
 
-        except Exception as e:
+        except (json.JSONDecodeError, Exception) as e:
             logger.error(f"Error in manager node: {e}")
             # Default to RAG on error
             state.needs_table = False
             state.needs_rag = True
+            state.rag_sub_query = state.query
 
-        return {"needs_table": state.needs_table, "needs_rag": state.needs_rag}
+        return {
+            "needs_table": state.needs_table, 
+            "needs_rag": state.needs_rag,
+            "table_sub_query": getattr(state, 'table_sub_query', ''),
+            "rag_sub_query": getattr(state, 'rag_sub_query', '')
+        }
 
     def _table_node(self, state: AgentState) -> Dict[str, Any]:
         """Table node for handling data queries using TableAgent"""
-        print(f"[DEBUG] Table Node called with query: {state.query}")
+        query_to_use = getattr(state, 'table_sub_query', '') or state.query
+        print(f"[DEBUG] Table Node called with sub-query: {query_to_use}")
 
         try:
             if self.table_agent:
-                table_response = self.table_agent.process_query(state.query, state.pdf_uuid)
-                print(
-                    f"[DEBUG] Table Node response from TableAgent: {table_response}")
+                table_response = self.table_agent.process_query(query_to_use, state.pdf_uuid)
+                print(f"[DEBUG] Table Node response from TableAgent: {table_response}")
             else:
                 logger.error("TableAgent not initialized")
-                table_response = f"Error: Table processing unavailable for query: {state.query}"
+                table_response = f"Error: Table processing unavailable for query: {query_to_use}"
                 print(f"[DEBUG] Table Node error: TableAgent not initialized")
         except Exception as e:
             logger.error(f"Error in table node: {e}")
-            table_response = f"Error processing data query: {state.query}"
+            table_response = f"Error processing data query: {query_to_use}"
             print(f"[DEBUG] Table Node error response: {table_response}")
 
         return {"table_response": table_response}
+    
+
 
     def _rag_node(self, state: AgentState) -> Dict[str, Any]:
         """RAG node for handling knowledge queries using ChatbotAgent"""
-        print(f"[DEBUG] RAG Node called with query: {state.query}")
+        query_to_use = getattr(state, 'rag_sub_query', '') or state.query
+        print(f"[DEBUG] RAG Node called with sub-query: {query_to_use}")
         
         try:
             if self.chatbot_agent:
                 # Use the ChatbotAgent's answer_question function with PDF UUID
-                response = self.chatbot_agent.answer_question(state.query, pdf_uuid=state.pdf_uuid)
-                rag_response = response.get("answer", f"RAG processing: {state.query}")
+                response = self.chatbot_agent.answer_question(query_to_use, pdf_uuid=state.pdf_uuid)
+                rag_response = response.get("answer", f"RAG processing: {query_to_use}")
                 print(f"[DEBUG] RAG Node response from ChatbotAgent: {rag_response}")
             else:
                 # Fallback if no ChatbotAgent is available
-                rag_response = f"RAG processing: {state.query}"
+                rag_response = f"RAG processing: {query_to_use}"
                 print(f"[DEBUG] RAG Node response (fallback): {rag_response}")
         except Exception as e:
             logger.error(f"Error in RAG node: {e}")
-            rag_response = f"RAG processing error: {state.query}"
+            rag_response = f"RAG processing error: {query_to_use}"
             print(f"[DEBUG] RAG Node error response: {rag_response}")
         
         return {"rag_response": rag_response}

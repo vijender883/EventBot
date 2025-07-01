@@ -1,7 +1,7 @@
 import logging
 import json
 import mysql.connector
-from typing import Dict, Any
+from typing import Dict, Any, List
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from urllib.parse import urlparse, parse_qs
@@ -77,8 +77,10 @@ class TableAgent:
             with open(self.schema_path, 'r') as f:
                 schema = json.load(f)
             logger.info(f"Schema loaded from {self.schema_path}")
-            logger.debug(f"Schema content: {json.dumps(schema, indent=2)}")
-            print(f"[DEBUG] Schema loaded successfully: {list(schema.keys()) if schema else 'Empty schema'}")
+            # Extract table names and UUIDs for cleaner logging
+            table_info = [(name, info.get('pdf_uuid', 'No UUID')) for name, info in schema.items()]
+            logger.debug(f"Schema tables: {table_info}")
+            print(f"[DEBUG] Schema loaded successfully: {len(schema)} tables")
             return schema
             
         except json.JSONDecodeError as e:
@@ -102,13 +104,16 @@ class TableAgent:
         try:
             print(f"[DEBUG] Table Agent processing query: {query} with PDF UUID: {pdf_uuid}")
 
+            # Always reload schema to get latest changes
+            logger.info("Reloading schema to get latest changes...")
+            self.schema = self._load_schema()
+            
             if not self.schema:
                 logger.error("No schema available for query processing")
-                # Try to reload schema once
-                logger.info("Attempting to reload schema...")
-                self.schema = self._load_schema()
-                if not self.schema:
-                    return f"Error: Could not load schema for query: {query}"
+                return f"Error: Could not load schema for query: {query}"
+        
+            table_summary = [(name, info.get('pdf_uuid', 'No UUID')) for name, info in self.schema.items()]
+            logger.info(f"Schema reloaded with {len(self.schema)} tables: {table_summary}")
 
             # Filter schema by PDF UUID if provided
             filtered_schema = self.schema
@@ -117,11 +122,24 @@ class TableAgent:
                     table_name: table_info for table_name, table_info in self.schema.items()
                     if table_info.get('pdf_uuid') == pdf_uuid
                 }
+                filtered_tables = [(name, info.get('pdf_uuid', 'No UUID')) for name, info in filtered_schema.items()]
+                logger.info(f"for UUID {pdf_uuid}, filtered tables: {filtered_tables}")
+                logger.info(f"Available table names for UUID {pdf_uuid}: {list(filtered_schema.keys())}")
+                logger.info(f"All available UUIDs in schema: {[info.get('pdf_uuid') for info in self.schema.values()]}")
                 
                 if not filtered_schema:
-                    return f"No tables found for the current document (UUID: {pdf_uuid}). Please upload a PDF first."
+                    # Try to find if there are any tables at all
+                    available_uuids = [info.get('pdf_uuid') for info in self.schema.values() if info.get('pdf_uuid')]
+                    if available_uuids:
+                        logger.warning(f"UUID {pdf_uuid} not found. Available UUIDs: {available_uuids}")
+                        # Fallback: use all tables if UUID mismatch (for debugging)
+                        logger.info("Using all available tables as fallback")
+                        filtered_schema = self.schema
+                    else:
+                        return f"No tables found for the current document (UUID: {pdf_uuid}). Please upload a PDF first."
 
-            # Generate SQL query
+            # Generate SQL query with filtered schema
+            logger.info(f"Passing filtered schema with {len(filtered_schema)} tables to SQL generation")
             sql_query = self._generate_sql_query(query, filtered_schema)
 
             if "Cannot generate SQL" in sql_query:
@@ -149,12 +167,19 @@ class TableAgent:
         """
         if schema is None:
             schema = self.schema
-            
+        
+        # Validate that schema is not empty
+        if not schema:
+            logger.error("Empty schema provided for SQL generation")
+            return "Cannot generate SQL for this query - no schema available"
+        schema_summary = [(name, info.get('pdf_uuid', 'No UUID')) for name, info in schema.items()]
+        logger.info(f"Processing SQL generation with tables: {schema_summary}")
         system_prompt = """
         You are an expert SQL query generator. Based on the provided database schema and user query, generate a valid SQL SELECT query for MySQL.
         - Use only the tables and columns defined in the schema.
         - Table names may contain spaces or special characters (e.g., "pdf_b55f83da_table_1_25").
-        - Use backticks around table and column names to handle special characters.
+        - ALWAYS use backticks around table and column names to handle special characters.
+        - When filtering by PDF UUID, only use tables that match the current document context.
         - Map schema data types to MySQL types: "String" to VARCHAR, "Integer" to INT, "currency" to DECIMAL/FLOAT.
         - Ensure the query is syntactically correct and optimized for MySQL.
         - Do not include INSERT, UPDATE, or DELETE statements.
@@ -334,3 +359,15 @@ class TableAgent:
                 "overall_health": False,
                 "error": str(e)
             }
+    
+    def _get_table_summary(self, schema_dict: Dict[str, Any]) -> List[tuple]:
+        """
+        Create a clean summary of tables with just name and UUID
+        
+        Args:
+            schema_dict: Schema dictionary to summarize
+            
+        Returns:
+            List of tuples containing (table_name, uuid)
+        """
+        return [(name, info.get('pdf_uuid', 'No UUID')) for name, info in schema_dict.items()]

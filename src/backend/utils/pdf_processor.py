@@ -695,7 +695,7 @@ Respond with valid JSON only:
             print(f"Text chunks extracted: {len(text_chunks)}")
             print(f"Tables stored: {len(stored_tables)}")
             for table in stored_tables:
-                print(f"  - {table['name']}: {table['rows']} rows - {table['description']}")
+                print(f"  - {table['name']}: {table['rows']}")
             print("===============================\n")
 
             return {
