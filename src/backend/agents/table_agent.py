@@ -270,7 +270,7 @@ class TableAgent:
                 if len(results) == 1 and len(results[0]) == 1:
                     value = results[0][0]
                     if "count" in original_query.lower() or "number" in original_query.lower():
-                        return f"Number of products with price above $500: {value}"
+                        return f"Result: {value}"
                     else:
                         return f"Result: {value}"
                 else:
