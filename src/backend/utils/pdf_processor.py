@@ -27,6 +27,7 @@ class TableInfo:
     description: str
     data: List[List[str]]
     column_count: int
+    context: Optional[Dict[str, str]] = None
 
 class TableSchema(BaseModel):
     """Pydantic model for table schema from Gemini."""
@@ -93,25 +94,40 @@ class PDFProcessor:
         except Exception as e:
             logger.error(f"Failed to save schemas: {e}")
 
-    def _get_context_text(self, pdf_path: str, page_num: int, table_position: int) -> str:
-        """Extract 400 characters of text before the table for context."""
+    def _get_context_text(self, pdf_path: str, page_num: int, table_position: int) -> dict:
+        """Extract 400 characters of text before and after the table for context."""
         try:
             with pdfplumber.open(pdf_path) as pdf:
                 page = pdf.pages[page_num - 1]
                 text = page.extract_text() or ""
                 
-                # Simple heuristic: take text before the table position
+                # Simple heuristic: split text around table position
                 # This is approximate since we don't have exact table positions
-                context_length = min(400, len(text) // 2)
-                return text[:context_length]
+                mid_point = len(text) // 2
+                
+                # Extract 400 chars before and after the estimated table position
+                before_start = max(0, mid_point - 400)
+                before_text = text[before_start:mid_point].strip()
+                
+                after_end = min(len(text), mid_point + 400)
+                after_text = text[mid_point:after_end].strip()
+                
+                return {
+                    "before": before_text,
+                    "after": after_text
+                }
         except Exception as e:
             logger.warning(f"Failed to extract context text: {e}")
-            return ""
+            return {"before": "", "after": ""}
 
 
 
     def _generate_detailed_description(self, table_info: TableInfo, stored_row_count: int) -> str:
         """Generate detailed table description after data is stored."""
+        # Get context text if available
+        context_before = table_info.context.get("before", "") if table_info.context else ""
+        context_after = table_info.context.get("after", "") if table_info.context else ""
+        
         # Prepare full table preview (first 3 rows + last 2 rows if more than 5 total)
         headers = list(table_info.schema.keys())
         data_rows = table_info.data[1:]  # Skip header
@@ -150,44 +166,32 @@ class PDFProcessor:
         
         schema_text = "\n".join(schema_summary)
         
+        # Add context section to prompt
+        context_section = ""
+        if context_before or context_after:
+            context_section = f"""
+        SURROUNDING CONTEXT:
+        Text before table: {context_before[:200]}{'...' if len(context_before) > 200 else ''}
+        Text after table: {context_after[:200]}{'...' if len(context_after) > 200 else ''}
+        """
+
         prompt = f"""
-    Generate a comprehensive table description for database query generation. This description will help an LLM choose the correct table and generate accurate SQL queries.
+        Generate a comprehensive table description for database query generation. This description will help an LLM choose the correct table and generate accurate SQL queries.
 
-    TABLE INFORMATION:
-    Table Name: {table_info.name}
-    Total Rows Stored: {stored_row_count}
-    Column Count: {len(headers)}
+        TABLE INFORMATION:
+        Table Name: {table_info.name}
+        Total Rows Stored: {stored_row_count}
+        Column Count: {len(headers)}
 
-    SCHEMA DETAILS:
-    {schema_text}
+        SCHEMA DETAILS:
+        {schema_text}
 
-    SAMPLE DATA:
-    {table_preview}
+        SAMPLE DATA:
+        {table_preview}
 
-    Please provide a detailed description including:
+        {context_section}
 
-    ### 1. Table Metadata
-    - Table name and purpose
-    - Complete list of column names and their data types
-    - Key identifier columns (if any)
-
-    ### 2. Sample Data Context  
-    - Brief explanation of the sample data shown
-    - Data format and typical values
-
-    ### 3. Table Purpose
-    - What this table represents (e.g., "Employee records", "Product catalog", "Financial transactions")
-    - Main use case or business function
-
-    ### 4. Common Query Patterns
-    - 2-3 example query types this table would be used for
-    - Typical filtering, grouping, or aggregation scenarios
-
-    ### 5. Data Characteristics
-    - Total number of records
-    - Any notable data patterns or relationships
-
-    Provide a clear, comprehensive description that would help an LLM understand when and how to use this table for query generation:
+        Provide a clear, concise and simple description that would help an LLM understand when and how to use this table for query generation:
     """
 
         try:
@@ -211,7 +215,7 @@ class PDFProcessor:
 
 
 
-    def _query_gemini_for_schema(self, table_data: List[List[str]], context_text: str, pdf_uuid: str, table_index: int = 1) -> TableSchema:
+    def _query_gemini_for_schema(self, table_data: List[List[str]], context_dict: dict, pdf_uuid: str, table_index: int = 1) -> TableSchema:
         """Query Gemini for table schema only (description will be generated later with full data)."""
         # Prepare the table preview (top 3 rows)
         preview_rows = table_data[:3]
@@ -648,10 +652,10 @@ Respond with valid JSON only:
 
                         # Process new table with Gemini
                         print("Analyzing new table with Gemini...")
-                        context_text = self._get_context_text(pdf_path, page_num, table_idx)
+                        context_dict = self._get_context_text(pdf_path, page_num, table_idx)
                         # Generate unique table index across all pages
                         global_table_index = len(stored_tables) + 1
-                        schema_info = self._query_gemini_for_schema(cleaned_table, context_text, pdf_uuid, global_table_index)
+                        schema_info = self._query_gemini_for_schema(cleaned_table, context_dict, pdf_uuid, global_table_index)
                         
                         print(f"✓ Gemini analysis complete:")
                         print(f"  Table name: {schema_info.table_name}")
@@ -677,6 +681,8 @@ Respond with valid JSON only:
                             data=cleaned_table,
                             column_count=len(cleaned_table[0])
                         )
+                        # Store context for later use in description generation
+                        current_table_info.context = context_dict
 
                 # Finalize the last table
                 if current_table_info:
