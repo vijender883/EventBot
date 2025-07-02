@@ -74,6 +74,60 @@ class PDFProcessor:
             raise HTTPException(
                 status_code=500, detail=f"Gemini configuration error: {str(e)}")
 
+    def _sanitize_column_name(self, column_name: str) -> str:
+        """
+        Sanitize column names to follow MySQL identifier naming conventions.
+        
+        Rules:
+        - Must start with letter or underscore
+        - Can contain letters, digits, underscores
+        - Max 64 characters
+        - Reserved words are handled by quoting
+        """
+        import re
+        
+        if not column_name or not column_name.strip():
+            return "unnamed_column"
+        
+        # Clean the name
+        cleaned = column_name.strip()
+        
+        # Replace spaces and special characters with underscores
+        cleaned = re.sub(r'[^\w]', '_', cleaned)
+        
+        # Remove consecutive underscores
+        cleaned = re.sub(r'_+', '_', cleaned)
+        
+        # Ensure it starts with letter or underscore
+        if cleaned and not (cleaned[0].isalpha() or cleaned[0] == '_'):
+            cleaned = 'col_' + cleaned
+        
+        # Remove trailing underscores
+        cleaned = cleaned.rstrip('_')
+        
+        # Ensure it's not empty after cleaning
+        if not cleaned:
+            cleaned = "unnamed_column"
+        
+        # Truncate to 64 characters (MySQL limit)
+        if len(cleaned) > 64:
+            cleaned = cleaned[:60] + '_trunc'
+        
+        # Handle MySQL reserved words by adding suffix
+        mysql_reserved = {
+            'order', 'group', 'select', 'from', 'where', 'insert', 'update', 
+            'delete', 'create', 'drop', 'alter', 'index', 'table', 'database',
+            'key', 'primary', 'foreign', 'unique', 'null', 'not', 'and', 'or',
+            'in', 'exists', 'between', 'like', 'is', 'as', 'on', 'join', 'inner',
+            'outer', 'left', 'right', 'union', 'distinct', 'count', 'sum', 'avg',
+            'min', 'max', 'having', 'case', 'when', 'then', 'else', 'end'
+        }
+        
+        if cleaned.lower() in mysql_reserved:
+            cleaned += '_col'
+        
+        return cleaned
+
     def _load_schemas(self) -> Dict:
         """Load existing table schemas from JSON file."""
         if self.schema_file.exists():
@@ -229,7 +283,11 @@ class PDFProcessor:
 
     Please provide a JSON response with:
     1. table_name: A descriptive name for this table (use format: pdf_{pdf_uuid}_descriptive_name)
-    2. table_schema: Object mapping column names to SQL types (use: "string", "integer", "float", "text", "currency", "percentage")
+    2. table_schema: Object mapping SANITIZED column names to SQL types (use: "string", "integer", "float", "text", "currency", "percentage")
+    - Column names must follow MySQL rules: letters, digits, underscores only
+    - Must start with letter or underscore
+    - Replace spaces with underscores
+    - Max 64 characters
     3. description: "TBD" (will be generated later with full data)
 
 Schema type guidelines:
@@ -266,6 +324,16 @@ Respond with valid JSON only:
                 response_text = response_text.split("```")[1].split("```")[0]
             
             schema_data = json.loads(response_text)
+
+            # Sanitize column names in the schema
+            if 'table_schema' in schema_data:
+                original_schema = schema_data['table_schema']
+                sanitized_schema = {}
+                for col_name, col_type in original_schema.items():
+                    sanitized_name = self._sanitize_column_name(col_name)
+                    sanitized_schema[sanitized_name] = col_type
+                schema_data['table_schema'] = sanitized_schema
+
             return TableSchema(**schema_data)
             
         except Exception as e:
@@ -273,7 +341,7 @@ Respond with valid JSON only:
             # Fallback to basic schema
             headers = table_data[0] if table_data else []
             fallback_schema = {
-                header.lower().replace(" ", "_"): "string" 
+                self._sanitize_column_name(header): "string" 
                 for header in headers
             }
             return TableSchema(
@@ -721,7 +789,14 @@ Respond with valid JSON only:
         """Store table using Gemini-generated schema and Pydantic validation with enhanced numeric parsing."""
         try:
             print(f"\nStoring table: {table_info.name}")
+            # Validate and sanitize column names in schema
+            sanitized_schema = {}
+            for col_name, col_type in table_info.schema.items():
+                sanitized_name = self._sanitize_column_name(col_name)
+                sanitized_schema[sanitized_name] = col_type
             
+            # Update table_info with sanitized schema
+            table_info.schema = sanitized_schema
             # Create Pydantic model for validation
             schema_info = TableSchema(
                 table_name=table_info.name,
@@ -888,7 +963,11 @@ Respond with valid JSON only:
             return False
             
         # Create basic table info for legacy support
-        basic_schema = {f"col_{i}": "string" for i in range(len(table_data[0]))}
+        headers = table_data[0] if table_data else []
+        basic_schema = {
+            self._sanitize_column_name(header) if header else f"col_{i}": "string" 
+            for i, header in enumerate(headers)
+        }
         table_info = TableInfo(
             name=table_name,
             schema=basic_schema,
