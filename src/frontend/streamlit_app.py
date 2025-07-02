@@ -303,7 +303,7 @@ class APIClient:
                 url,
                 files=files,
                 headers=headers,
-                timeout=600
+                timeout=1000
             )
             logger.info(f"the whole result file {response}")
             logger.info(f"Upload response status: {response.status_code}")
@@ -507,14 +507,6 @@ class ChatUI:
             else:
                 st.warning("⚠️ No PDF uploaded. Please upload a PDF first for document-specific queries.")
             
-            # Debug mode toggle in sidebar
-            with st.sidebar:
-                st.session_state.debug_mode = st.checkbox(
-                    "🐛 Debug Mode", 
-                    value=st.session_state.get('debug_mode', False),
-                    help="Show detailed error information"
-                )
-            
             # Display chat history
             self.display_chat_history()
             
@@ -542,13 +534,10 @@ class PDFUploader:
             st.sidebar.title("📄 Document Upload")
             st.sidebar.markdown("Upload a PDF document to enhance the chatbot's knowledge.")
             
-            # Prominent warning about the actual file size limit
-            st.sidebar.error("⚠️ **IMPORTANT: Maximum file size is 2MB** (ignore the 200MB text below)")
-            
             uploaded_file = st.sidebar.file_uploader(
-                "Choose a PDF file (2MB limit enforced)",
+                "Choose a PDF file",
                 type=['pdf'],
-                help="Upload a PDF document for the chatbot to analyze (Max: 2MB)"
+                help="Upload a PDF document for the chatbot to analyze"
             )
             
             if uploaded_file is not None:
@@ -558,8 +547,7 @@ class PDFUploader:
                 
                 # Check file size immediately and show clear feedback
                 if file_size_mb > 2.0:
-                    st.sidebar.error(f"❌ **File rejected: {file_size_mb:.1f}MB exceeds 2MB limit**")
-                    st.sidebar.warning("Please select a smaller file (under 2MB)")
+                    st.error(f"File size ({file_size_mb:.1f}MB) exceeds the 2MB limit. Please select a smaller file.")
                     return
                 
                 st.sidebar.success(f"✅ File accepted: {uploaded_file.name}")
@@ -691,6 +679,18 @@ class StreamlitApp:
     def run(self):
         """Run the main application with error boundaries"""
         try:
+            # Add this CSS block here - at the very start
+            st.markdown("""
+            <style>
+                .css-1d391kg {
+                    width: 350px;
+                }
+                section[data-testid="stSidebar"] {
+                    width: 350px !important;
+                }
+            </style>
+            """, unsafe_allow_html=True)
+            
             # Render sidebar (PDF upload)
             self.pdf_uploader.render_upload_interface()
             
