@@ -28,6 +28,7 @@ python-multipart
 
 # Database
 sqlalchemy
+mysql.connector
 pymysql
 cryptography
 
