@@ -29,10 +29,12 @@ class TableAgent:
             temperature=0.1  # Low temperature for precise SQL generation
         )
 
+       # Fix: Use absolute path resolution to avoid working directory issues
         if schema_path:
             self.schema_path = schema_path
         else:
             # Get the project root directory (EventBot/)
+            # /path/to/EventBot/src/backend/agents/table_agent.py
             current_file = os.path.abspath(__file__)
             project_root = os.path.dirname(os.path.dirname(
                 os.path.dirname(current_file)))  # /path/to/EventBot/
@@ -56,47 +58,46 @@ class TableAgent:
             # Check if file exists
             if not os.path.exists(self.schema_path):
                 logger.error(f"Schema file not found at: {self.schema_path}")
-                return {}
+                # Try alternative paths
+                alternative_paths = [
+                    os.path.join(os.getcwd(), 'src', 'backend',
+                                 'utils', 'table_schema.json'),
+                    os.path.join(os.path.dirname(__file__), '..',
+                                 'utils', 'table_schema.json'),
+                    'src/backend/utils/table_schema.json',
+                    './src/backend/utils/table_schema.json'
+                ]
+
+                for alt_path in alternative_paths:
+                    abs_alt_path = os.path.abspath(alt_path)
+                    logger.info(f"Trying alternative path: {abs_alt_path}")
+                    if os.path.exists(abs_alt_path):
+                        self.schema_path = abs_alt_path
+                        logger.info(
+                            f"Found schema at alternative path: {abs_alt_path}")
+                        break
+                else:
+                    logger.error(
+                        "Schema file not found in any expected location")
+                    return {}
 
             with open(self.schema_path, 'r') as f:
                 schema = json.load(f)
             logger.info(f"Schema loaded from {self.schema_path}")
+            # Extract table names and UUIDs for cleaner logging
             table_info = [(name, info.get('pdf_uuid', 'No UUID'))
-                        for name, info in schema.items()]
+                          for name, info in schema.items()]
             logger.debug(f"Schema tables: {table_info}")
             print(f"[DEBUG] Schema loaded successfully: {len(schema)} tables")
             return schema
+
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in schema file {self.schema_path}: {e}")
+            logger.error(
+                f"Invalid JSON in schema file {self.schema_path}: {e}")
             return {}
         except Exception as e:
             logger.error(f"Failed to load table_schema.json: {e}")
-        return {}
-    
-    def _validate_tables_exist(self, tables: List[str], conn: mysql.connector.connection.MySQLConnection) -> List[str]:
-        """
-        Validate that the given tables exist in the database
-
-        Args:
-            tables (List[str]): List of table names to check
-            conn: MySQL connection object
-
-        Returns:
-            List[str]: List of missing tables
-        """
-        missing_tables = []
-        cursor = conn.cursor()
-        try:
-            for table in tables:
-                cursor.execute("SHOW TABLES LIKE %s", (table,))
-                if not cursor.fetchone():
-                    missing_tables.append(table)
-            return missing_tables
-        except mysql.connector.Error as e:
-            logger.error(f"Error validating tables: {e}")
-            return tables
-        finally:
-            cursor.close()
+            return {}
 
     def process_query(self, query: str, pdf_uuid: str = None) -> str:
         """
@@ -163,11 +164,7 @@ class TableAgent:
                     f"LLM could not generate SQL for query: {query}")
                 return f"Unable to process data query: {query}. Required tables or columns may be missing. Available tables: {list(filtered_schema.keys())}"
 
-            # Validate tables in the query exist in the database
-            db_url = os.getenv(
-                'database_url',
-                'mysql+pymysql://admin:AlphaBeta1212@mydb.ch44qeeiq2ju.ap-south-1.rds.amazonaws.com:3306/My_database?charset=utf8mb4'
-            )
+            db_url = os.getenv('database_url')
             parsed_url = urlparse(db_url)
             query_params = parse_qs(parsed_url.query)
             charset = query_params.get('charset', ['utf8mb4'])[0]
@@ -181,14 +178,6 @@ class TableAgent:
                 port=parsed_url.port or 3306,
                 charset=charset
             )
-
-            # Extract table names from schema
-            schema_tables = list(filtered_schema.keys())
-            missing_tables = self._validate_tables_exist(schema_tables, conn)
-            if missing_tables:
-                conn.close()
-                logger.error(f"Missing tables in database: {missing_tables}")
-                return f"Error: The following tables do not exist in the database: {', '.join(missing_tables)}. Please ensure the tables are created."
 
             # Execute SQL query
             result = self._execute_sql_query(sql_query, query)
@@ -234,11 +223,11 @@ class TableAgent:
         - Return only the SQL query, without explanations or additional text.
         - If aggregations (e.g., COUNT, SUM, AVG) are needed, use them appropriately.
         - For queries requiring data from multiple tables, use appropriate JOINs (e.g., LEFT JOIN, INNER JOIN) based on relationships.
-        - Relationships: The `Patient ID` column is a common key linking tables (e.g., `pdf_9aec543c_patient_data`, `pdf_9aec543c_appointments`, `pdf_9aec543c_prescriptions`).
+        - Relationships: For example, if `pdf_9aec543c_patient_data` has a `Patient ID` column and `pdf_9aec543c_appointments` has a `Patient ID` column, join them on this key.
         - Use LEFT JOIN when data from one table is optional, and INNER JOIN when data must exist in both tables.
         - Only include tables necessary for the query to avoid unnecessary complexity.
-        - Map query terms to schema tables: "patient records" refers to `pdf_9aec543c_patient_data`, "appointments" to `pdf_9aec543c_appointments`, "prescriptions" to `pdf_9aec543c_prescriptions`.
-        - If a query references unavailable tables (e.g., billing, staff, insurance), return "Cannot generate SQL for this query."
+        - If the query requires data from multiple tables, ensure to join them correctly based on their relationships.
+        - If the query requires data from a single table, use that table directly.
         - Example: For a query like "List patient names and their appointment dates," join `pdf_9aec543c_patient_data` and `pdf_9aec543c_appointments` on `Patient ID`.
 
         Schema:
@@ -288,8 +277,7 @@ class TableAgent:
         try:
             # Database URL (prefer environment variable)
             db_url = os.getenv(
-                'database_url',
-                'mysql+pymysql://admin:AlphaBeta1212@mydb.ch44qeeiq2ju.ap-south-1.rds.amazonaws.com:3306/My_database?charset=utf8mb4'
+                'database_url'
             )
 
             # Parse the database URL
@@ -394,11 +382,6 @@ class TableAgent:
                 charset=charset
             )
 
-            # Validate schema tables exist
-            schema_tables = list(self.schema.keys())
-            missing_tables = self._validate_tables_exist(schema_tables, conn)
-            tables_valid = not missing_tables
-
             conn.close()
 
             return {
@@ -408,9 +391,6 @@ class TableAgent:
                 "schema_path_exists": schema_path_exists,
                 "schema_path": self.schema_path,
                 "db_connection": True,
-                "tables_valid": tables_valid,
-                "missing_tables": missing_tables,
-                "overall_health": True and tables_valid
             }
         except Exception as e:
             logger.error(f"Table Agent health check failed: {e}")
