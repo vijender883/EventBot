@@ -42,8 +42,8 @@ A PDF document assistant with a FastAPI-based backend and a Streamlit-based fron
 
 ## 🏛️ Logic Architecture
 
-[Link to Logic Architecture Document will be added here once available]
-_(Please see `docs/ARCHITECTURE.md` for a detailed system architecture description based on the codebase)._
+- [Google Docs: Logic Architecture Diagram & Notes](https://docs.google.com/document/d/1CpHqRASLtBGXrngHrdobjVLwmp-S60_pJTYGHJGXX5o/edit?tab=t.0)
+- [Detailed System Architecture (docs/ARCHITECTURE.md)](docs/ARCHITECTURE.md)
 
 ## 📋 Prerequisites
 
@@ -74,29 +74,76 @@ For a quick start, follow these steps:
         python -m venv venv
         venv\Scripts\activate
         ```
-    *For PowerShell or other shells, please refer to the detailed guide.*
+    *   **Windows (PowerShell):**
+        ```powershell
+        venv\Scripts\Activate.ps1
+        ```
+    *For other shells, please refer to the detailed guide.*
 
 3.  **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
+4.  **Set Up Environment Variables:**
+    - Copy the template and fill in your API keys and configuration:
+    ```bash
+    cp .env.template .env
+    # On Windows:
+    # copy .env.template .env
+    ```
+    - Edit `.env` with your credentials (see [Environment Configuration](docs/INSTALLATION.md#environment-configuration) for details).
+
 For comprehensive instructions, including API key setup, environment configuration (especially `DATABASE_URL`), running the application, deployment, and troubleshooting, please see our [Detailed Installation and Setup Guide](docs/INSTALLATION.md).
 
 ### Running the Backend
+
+**Before running the backend, ensure your virtual environment (`venv`) is activated.**  
+If you see `(venv)` in your terminal prompt, it's active.  
+If not, activate it with:
+
+- **macOS/Linux:**
+    ```bash
+    source venv/bin/activate
+    ```
+- **Windows (Command Prompt):**
+    ```cmd
+    venv\Scripts\activate
+    ```
+- **Windows (PowerShell):**
+    ```powershell
+    venv\Scripts\Activate.ps1
+    ```
 
 To run the FastAPI backend server:
 ```bash
 make run-backend
 # Alternatively: uvicorn app:app --reload
 ```
-The backend will typically start on `http://localhost:8000` (FastAPI's default) or `http://localhost:5000` if configured.
+The backend will typically start on `http://localhost:8000` (FastAPI's default) if configured.
 
 ### Running the Frontend
 
+**Before running the frontend, ensure your virtual environment (`venv`) is activated.**  
+If you see `(venv)` in your terminal prompt, it's active.  
+If not, activate it with:
+
+- **macOS/Linux:**
+    ```bash
+    source venv/bin/activate
+    ```
+- **Windows (Command Prompt):**
+    ```cmd
+    venv\Scripts\activate
+    ```
+- **Windows (PowerShell):**
+    ```powershell
+    venv\Scripts\Activate.ps1
+    ```
+
 To run the Streamlit frontend application:
 1.  Ensure the backend is running.
-2.  Set the `ENDPOINT` environment variable if your backend is not on `http://localhost:5000`. For local development, you can add `ENDPOINT=http://localhost:5000` (or your backend's port) to your `.env` file.
+2.  Set the `ENDPOINT` environment variable if your backend is not on `http://localhost:8000`. For local development, you can add `ENDPOINT=http://localhost:8000` (or your backend's port) to your `.env` file.
 ```bash
 make run-frontend
 # Alternatively: streamlit run src/frontend/streamlit_app.py
@@ -138,7 +185,8 @@ EventBot/
 │   │   │   ├── base.py            # Defines a base class for agents
 │   │   │   ├── combiner_agent.py  # Agent for combining responses
 │   │   │   ├── manager_agent.py   # Agent for orchestrating query processing (uses LangGraph)
-│   │   │   └── rag_agent.py       # Implements the RAG-based chatbot logic (ChatbotAgent)
+│   │   │   ├── rag_agent.py       # Implements the RAG-based chatbot logic (ChatbotAgent)
+│   │   │   └── table_agent.py     # Agent for querying structured table data
 │   │   ├── config.py              # Centralized backend application configuration
 │   │   ├── models.py              # Pydantic models for API requests/responses
 │   │   ├── routes/                # Defines API endpoints
@@ -148,12 +196,13 @@ EventBot/
 │   │   │   ├── __init__.py        # Service package initializer
 │   │   │   ├── embedding_service.py # Handles text embeddings and Pinecone storage
 │   │   │   └── orchestrator.py    # Orchestrates interactions with ManagerAgent
-│   │   ├── test_manager_agent.py  # Test script for ManagerAgent (currently in `src/backend/`, consider moving to `tests/`)
-│   │   └── utils/                 # Backend utility functions and helpers
-│   │       ├── __init__.py        # Utilities package initializer
-│   │       ├── helper.py          # Miscellaneous helper functions
-│   │       ├── pdf_processor.py   # PDF parsing and MySQL table storage
-│   │       └── upload_pdf.py      # PDF upload handling utilities
+│   │   ├── utils/                 # Backend utility functions and helpers
+│   │   │   ├── __init__.py        # Utilities package initializer
+│   │   │   ├── helper.py          # Miscellaneous helper functions
+│   │   │   ├── pdf_processor.py   # PDF parsing and MySQL table storage
+│   │   │   ├── schema_manager.py  # Manages table schemas (e.g., from table_schema.json)
+│   │   │   ├── table_schema.json  # Stores inferred schemas for tables from PDFs
+│   │   │   └── upload_pdf.py      # PDF upload handling utilities
 │   └── frontend/                  # Source code for the Streamlit frontend
 │       └── streamlit_app.py       # Main Streamlit application file
 ├── tests/                         # Directory for automated tests
@@ -246,11 +295,11 @@ The application uses environment variables for configuration. These are typicall
 -   `PINECONE_REGION`: The region of your Pinecone index (e.g., `us-east-1`).
 -   `DATABASE_URL`: Connection string for your MySQL database (e.g., `mysql+mysqlconnector://user:password@host:port/database`). Critical for table storage and querying.
 -   `APP_ENV`: Set to `development` or `production`.
--   `PORT`: Port for the backend server (defaults to `8000` or `5000`).
+-   `PORT`: Port for the backend server (defaults to `8000`).
 -   `LOG_LEVEL`: Optional, sets the logging level (e.g., `DEBUG`, `INFO`).
 
 **Frontend Variables:**
--   `ENDPOINT`: The URL of the backend API (e.g., `http://localhost:5000`).
+-   `ENDPOINT`: The URL of the backend API (e.g., `http://localhost:8000`).
 
 ## 🧪 Running Tests
 

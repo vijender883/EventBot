@@ -39,7 +39,7 @@ try:
     API_BASE_URL = config.ENDPOINT
 except ImportError:
     # Fallback to environment variable or default
-    API_BASE_URL = os.getenv("ENDPOINT", "http://localhost:5000")
+    API_BASE_URL = os.getenv("ENDPOINT", "http://localhost:8000")
 
 # ANSI color codes for better output
 class Colors:

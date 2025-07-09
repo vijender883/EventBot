@@ -85,7 +85,7 @@ Open the `.env` file with a text editor and fill in your actual API keys and Pin
 ```env
 # Backend Configuration (FastAPI)
 APP_ENV=development # Set to 'production' when deploying (e.g., for Uvicorn settings)
-PORT=8000           # Default port for FastAPI/Uvicorn, can be changed (e.g., to 5000)
+PORT=8000           # Default port for FastAPI/Uvicorn, can be changed
 
 # API Keys (Replace with your actual keys)
 GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
