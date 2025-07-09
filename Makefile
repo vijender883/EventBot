@@ -57,7 +57,7 @@ clean:
 # Run the FastAPI application
 run-backend:
 	@echo "Starting FastAPI backend server with Uvicorn..."
-	@APP_ENV=development uvicorn app:app --reload --host 0.0.0.0 --port $${PORT:-5000}
+	@APP_ENV=development uvicorn app:app --reload --host 0.0.0.0 --port $${PORT:-8000}
 
 # Run the Streamlit application
 run-frontend:
@@ -67,12 +67,12 @@ run-frontend:
 # Run both backend and frontend concurrently for development
 run-all:
 	@echo "Starting backend and frontend servers..."
-	@echo "Backend will run on http://localhost:$${PORT:-5000} (default script port is 5000, or as set in .env)"
+	@echo "Backend will run on http://localhost:$${PORT:-8000} (default script port is 8000, or as set in .env)"
 	@echo "Frontend will run on http://localhost:8501 (default)"
-	@echo "Make sure ENDPOINT in .env is set correctly (e.g., http://localhost:5000 or your configured backend port)"
+	@echo "Make sure ENDPOINT in .env is set correctly (e.g., http://localhost:8000 or your configured backend port)"
 	@echo "Press Ctrl+C to stop both servers."
 	@trap 'kill $(BE_PID); kill $(FE_PID); exit' INT TERM
-	@APP_ENV=development uvicorn app:app --reload --host 0.0.0.0 --port $${PORT:-5000} & BE_PID=$$!; \
+	@APP_ENV=development uvicorn app:app --reload --host 0.0.0.0 --port $${PORT:-8000} & BE_PID=$$!; \
 	streamlit run ./src/frontend/streamlit_app.py & FE_PID=$$!; \
 	wait $BE_PID; wait $FE_PID
 
