@@ -23,7 +23,7 @@ class Config:
         
         # Flask/FastAPI Configuration
         self.HOST = os.getenv("HOST", "0.0.0.0")  # Added missing HOST
-        self.PORT = int(os.getenv("PORT", 5000))
+        self.PORT = int(os.getenv("PORT", 8000))
         self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"  # Added missing DEBUG
         self.ENDPOINT = os.getenv("ENDPOINT", f"http://localhost:{self.PORT}")
         
