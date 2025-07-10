@@ -168,26 +168,8 @@ In your Render service's dashboard, navigate to the "Environment" section. Add t
 -   Use [Streamlit Community Cloud](https://streamlit.io/cloud) for deploying the frontend, which is often simpler for Streamlit apps.
 -   Adapt the `start.sh` script and potentially use a process manager like `supervisor` if you intend to run both backend and frontend from the same service instance (more complex).
 
-### 6. Deploy
 
-1.  Click "Create Web Service".
-2.  Render will begin the deployment process (pulling code, building, and starting the service). Monitor the deployment logs for any errors.
-3.  Once deployed, your service will be accessible at a URL like `https://your-service-name.onrender.com`.
-
-### 7. Test Deployment
-
-Use `curl` or Postman to test your live service endpoints:
-```bash
-curl https://your-service-name.onrender.com/health
-# Replace with your service name and a test PDF
-curl -X POST -F "file=@path/to/your_document.pdf" https://your-service-name.onrender.com/uploadpdf
-# After getting pdf_uuid from above:
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"query": "Summarize this document.", "pdf_uuid": "your_pdf_uuid_from_upload"}' \
-  https://your-service-name.onrender.com/answer
-```
-
-## 🧪 Running Tests
+<!-- ## 🧪 Running Tests
 
 *(This section outlines general steps. Specific test setup might vary.)*
 
@@ -245,4 +227,4 @@ This project should include automated tests to ensure reliability. Assuming `pyt
 For more verbose error output locally:
 1.  Set `APP_ENV=development` in your `.env` file.
 2.  Set `LOG_LEVEL=DEBUG` in your `.env` file for more detailed application logs.
-3.  Run the app with Uvicorn: `uvicorn app:app --reload --port ${PORT:-8000} --log-level ${LOG_LEVEL:-debug}`.
+3.  Run the app with Uvicorn: `uvicorn app:app --reload --port ${PORT:-8000} --log-level ${LOG_LEVEL:-debug}`. -->
