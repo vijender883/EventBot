@@ -11,8 +11,8 @@ A PDF document assistant with a FastAPI-based backend and a Streamlit-based fron
 - [🔑 API Keys Setup](docs/INSTALLATION.md#-api-keys-setup)
 - [⚙️ Environment Configuration](docs/INSTALLATION.md#environment-configuration)
 - [🚀 Running Locally](docs/INSTALLATION.md#-running-locally)
-  - [Running the Backend](#running-the-backend)
-  - [Running the Frontend](#running-the-frontend)
+  - [Running the Backend](docs/INSTALLATION.md#1-start-the-backend-server)
+  - [Running the Frontend](docs/INSTALLATION.md#2-start-the-frontend-application)
 - [📡 API Endpoints](#-api-endpoints)
 - [🌐 Deploy to Render.com](docs/INSTALLATION.md#-deploy-to-rendercom)
 - [🔧 Development](#-development)
@@ -55,100 +55,16 @@ A PDF document assistant with a FastAPI-based backend and a Streamlit-based fron
 
 ## 🛠️ Installation & Setup
 
-For a quick start, follow these steps:
+**All installation, setup, and running instructions have been moved to [docs/INSTALLATION.md](docs/INSTALLATION.md).**
 
-1.  **Clone the Repository:**
-    ```bash
-    git clone https://github.com/vijender883/EventBot
-    cd EventBot
-    ```
-
-2.  **Create and Activate Virtual Environment:**
-    *   **macOS/Linux:**
-        ```bash
-        python3 -m venv venv
-        source venv/bin/activate
-        ```
-    *   **Windows (Command Prompt):**
-        ```cmd
-        python -m venv venv
-        venv\Scripts\activate
-        ```
-    *   **Windows (PowerShell):**
-        ```powershell
-        venv\Scripts\Activate.ps1
-        ```
-    *For other shells, please refer to the detailed guide.*
-
-3.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4.  **Set Up Environment Variables:**
-    - Copy the template and fill in your API keys and configuration:
-    ```bash
-    cp .env.template .env
-    # On Windows:
-    # copy .env.template .env
-    ```
-    - Edit `.env` with your credentials (see [Environment Configuration](docs/INSTALLATION.md#environment-configuration) for details).
-
-For comprehensive instructions, including API key setup, environment configuration (especially `DATABASE_URL`), running the application, deployment, and troubleshooting, please see our [Detailed Installation and Setup Guide](docs/INSTALLATION.md).
-
-### Running the Backend
-
-**Before running the backend, ensure your virtual environment (`venv`) is activated.**  
-If you see `(venv)` in your terminal prompt, it's active.  
-If not, activate it with:
-
-- **macOS/Linux:**
-    ```bash
-    source venv/bin/activate
-    ```
-- **Windows (Command Prompt):**
-    ```cmd
-    venv\Scripts\activate
-    ```
-- **Windows (PowerShell):**
-    ```powershell
-    venv\Scripts\Activate.ps1
-    ```
-
-To run the FastAPI backend server:
-```bash
-make run-backend
-# Alternatively: uvicorn app:app --reload
-```
-The backend will typically start on `http://localhost:8000` (FastAPI's default) if configured.
-
-### Running the Frontend
-
-**Before running the frontend, ensure your virtual environment (`venv`) is activated.**  
-If you see `(venv)` in your terminal prompt, it's active.  
-If not, activate it with:
-
-- **macOS/Linux:**
-    ```bash
-    source venv/bin/activate
-    ```
-- **Windows (Command Prompt):**
-    ```cmd
-    venv\Scripts\activate
-    ```
-- **Windows (PowerShell):**
-    ```powershell
-    venv\Scripts\Activate.ps1
-    ```
-
-To run the Streamlit frontend application:
-1.  Ensure the backend is running.
-2.  Set the `ENDPOINT` environment variable if your backend is not on `http://localhost:8000`. For local development, you can add `ENDPOINT=http://localhost:8000` (or your backend's port) to your `.env` file.
-```bash
-make run-frontend
-# Alternatively: streamlit run src/frontend/streamlit_app.py
-```
-The frontend will typically be available at `http://localhost:8501`.
+Please refer to that document for:
+- Cloning the repository
+- Creating and activating a virtual environment
+- Installing dependencies
+- Setting up API keys and environment variables
+- Running the backend and frontend
+- Deployment instructions
+- Troubleshooting and more
 
 ## 📡 API Endpoints
 
@@ -175,43 +91,59 @@ EventBot/
 ├── README.md                      # This guide
 ├── Makefile                       # Defines common tasks like running, testing, linting
 ├── app.py                         # Main FastAPI application entry point
-├── requirements.txt               # Python package dependencies
-├── requirements-dev.txt           # Development-specific dependencies
-├── start.sh                       # Script for starting backend
-├── src/                           # Main source code directory
-│   ├── backend/                   # Source code for the FastAPI backend
-│   │   ├── __init__.py            # Package initializer
-│   │   ├── agents/                # Houses different agent implementations
-│   │   │   ├── base.py            # Defines a base class for agents
-│   │   │   ├── combiner_agent.py  # Agent for combining responses
-│   │   │   ├── manager_agent.py   # Agent for orchestrating query processing (uses LangGraph)
-│   │   │   ├── rag_agent.py       # Implements the RAG-based chatbot logic (ChatbotAgent)
-│   │   │   └── table_agent.py     # Agent for querying structured table data
-│   │   ├── config.py              # Centralized backend application configuration
+├── clear_data_script.py           # Script for clearing data
+├── docs/
+│   ├── API.md
+│   ├── ARCHITECTURE.md            # (this file)
+│   ├── DEPLOYMENT.md
+│   └── INSTALLATION.md
+├── logs/                          # Log files
+├── Makefile                       # Common tasks (run, test, lint)
+├── README.md                      # Main documentation
+├── requirements.txt               # Python dependencies
+├── requirements-dev.txt           # Dev dependencies
+├── scripts/
+│   └── start.sh                   # Script to start backend
+├── src/
+│   ├── backend/
+│   │   ├── __init__.py            # FastAPI app setup and service initialization
+│   │   ├── agents/
+│   │   │   ├── base.py            # Abstract base class for chatbot agents
+│   │   │   ├── combiner_agent.py  # Combines responses from Table and RAG agents
+│   │   │   ├── manager_agent.py   # Orchestrates query processing (LangGraph)
+│   │   │   ├── rag_agent.py       # RAG-based chatbot logic (ChatbotAgent)
+│   │   │   └── table_agent.py     # Handles SQL generation and execution for table data
+│   │   ├── config.py              # Centralized backend configuration
 │   │   ├── models.py              # Pydantic models for API requests/responses
-│   │   ├── routes/                # Defines API endpoints
+│   │   ├── routes/
 │   │   │   ├── __init__.py        # Router package initializer
-│   │   │   └── chat.py            # Chat-related API endpoint definitions
-│   │   ├── services/              # Service layer
+│   │   │   └── chat.py            # API endpoints for chat, upload, health, etc.
+│   │   ├── services/
 │   │   │   ├── __init__.py        # Service package initializer
-│   │   │   ├── embedding_service.py # Handles text embeddings and Pinecone storage
+│   │   │   ├── clear_data_service.py # Service for clearing data from DB and Pinecone
+│   │   │   ├── embedding_service.py  # Handles text embeddings and Pinecone storage
 │   │   │   └── orchestrator.py    # Orchestrates interactions with ManagerAgent
-│   │   ├── utils/                 # Backend utility functions and helpers
-│   │   │   ├── __init__.py        # Utilities package initializer
-│   │   │   ├── helper.py          # Miscellaneous helper functions
-│   │   │   ├── pdf_processor.py   # PDF parsing and MySQL table storage
-│   │   │   ├── schema_manager.py  # Manages table schemas (e.g., from table_schema.json)
-│   │   │   ├── table_schema.json  # Stores inferred schemas for tables from PDFs
-│   │   │   └── upload_pdf.py      # PDF upload handling utilities
-│   └── frontend/                  # Source code for the Streamlit frontend
-│       └── streamlit_app.py       # Main Streamlit application file
-├── tests/                         # Directory for automated tests
+│   │   ├── test_manager_agent.py  # Example/test script for ManagerAgent
+│   │   └── utils/
+│   │       ├── __init__.py        # Utilities package initializer
+│   │       ├── helper.py          # Miscellaneous helper functions (e.g., error handlers)
+│   │       ├── pdf_processor.py   # PDF parsing, MySQL table storage, schema saving
+│   │       ├── schema_manager.py  # Manages table_schema.json (schema CRUD, docs)
+│   │       ├── table_schema.json  # Stores inferred schemas for tables from PDFs
+│   │       └── upload_pdf.py      # PDF upload handling, triggers extraction/storage
+│   └── frontend/
+│       └── streamlit_app.py       # Main Streamlit application file (UI)
+├── tests/
 │   ├── conftest.py
 │   ├── test_agents/
-│   │   └── test_rag_agent.py      # Example test for RAG agent
+│   │   └── test_rag_agent.py      # Test for RAG agent
 │   └── test_routes/
-│       └── test_chat_routes.py    # Example test for chat routes
+│       └── test_chat_routes.py    # Test for chat routes
+├── uploads/                       # Uploaded files (if any)
+└── venv/                          # Python virtual environment
 ```
+*Note: src/backend/test_manager_agent.py is an example/test script and ideally tests should reside in the tests/ directory.*
+
 
 ### Key Components
 
@@ -231,56 +163,6 @@ EventBot/
 
 **Frontend:**
 -   **`src/frontend/streamlit_app.py`**: A Streamlit application providing the user interface. It interacts with the backend API.
-
-### Project Structure
-```
-EventBot/
-├── .env                           # Local environment variables (gitignored)
-├── .env.template                  # Template for .env file
-├── .git/                          # Git version control directory
-├── .gitignore                     # Specifies intentionally untracked files for Git
-├── README.md                      # This guide
-├── Makefile                       # Defines common tasks like running, testing, linting
-├── app.py                         # Main FastAPI application entry point
-├── requirements.txt               # Python package dependencies
-├── requirements-dev.txt           # Development-specific dependencies
-├── start.sh                       # Script for starting backend
-├── src/                           # Main source code directory
-│   ├── backend/                   # Source code for the FastAPI backend
-│   │   ├── __init__.py            # Package initializer
-│   │   ├── agents/                # Houses different agent implementations
-│   │   │   ├── base.py            # Defines a base class for agents
-│   │   │   ├── combiner_agent.py  # Agent for combining responses
-│   │   │   ├── manager_agent.py   # Agent for orchestrating query processing (uses LangGraph)
-│   │   │   ├── rag_agent.py       # Implements the RAG-based chatbot logic (ChatbotAgent)
-│   │   │   └── table_agent.py     # Agent for querying structured table data
-│   │   ├── config.py              # Centralized backend application configuration
-│   │   ├── models.py              # Pydantic models for API requests/responses
-│   │   ├── routes/                # Defines API endpoints
-│   │   │   ├── __init__.py        # Router package initializer
-│   │   │   └── chat.py            # Chat-related API endpoint definitions
-│   │   ├── services/              # Service layer
-│   │   │   ├── __init__.py        # Service package initializer
-│   │   │   ├── embedding_service.py # Handles text embeddings and Pinecone storage
-│   │   │   └── orchestrator.py    # Orchestrates interactions with ManagerAgent
-│   │   ├── utils/                 # Backend utility functions and helpers
-│   │   │   ├── __init__.py        # Utilities package initializer
-│   │   │   ├── helper.py          # Miscellaneous helper functions
-│   │   │   ├── pdf_processor.py   # PDF parsing and MySQL table storage
-│   │   │   ├── schema_manager.py  # Manages table schemas (e.g., from table_schema.json)
-│   │   │   ├── table_schema.json  # Stores inferred schemas for tables from PDFs
-│   │   │   └── upload_pdf.py      # PDF upload handling utilities
-│   └── frontend/                  # Source code for the Streamlit frontend
-│       └── streamlit_app.py       # Main Streamlit application file
-├── tests/                         # Directory for automated tests
-│   ├── conftest.py
-│   ├── test_agents/
-│   │   └── test_rag_agent.py      # Example test for RAG agent
-│   └── test_routes/
-│       └── test_chat_routes.py    # Example test for chat routes
-```
-*Note: `src/backend/test_manager_agent.py` was present in the original structure; ideally, tests should reside in the `tests/` directory.*
-
 
 ### Environment Variables
 
