@@ -11,7 +11,7 @@ This document provides detailed specifications for the available API endpoints, 
 ## Common Information
 
 -   **Base URL**:
-    -   Local Development: `http://localhost:8000` (FastAPI default, can be configured via `.env` `PORT`, e.g., to `5000`)
+    -   Local Development: `http://localhost:8000`
     -   Production: This will be the URL provided by your deployment platform (e.g., `https://your-service-name.onrender.com`).
 -   **Authentication**: The API does not currently implement explicit user-facing authentication. Security for external services (Google Gemini, Pinecone) is managed server-side via environment variables.
 -   **Content Type**: For `POST` requests with a JSON body, `Content-Type: application/json` is required. For file uploads, `multipart/form-data` is used.

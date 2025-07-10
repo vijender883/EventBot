@@ -5,10 +5,6 @@
 ### 1. Clone the Repository
 
 ```bash
-# Make sure to clone the correct repository if the name changed, e.g.:
-# git clone https://github.com/vijender883/Chatbot_Pinecone_FastAPI_backend
-# cd Chatbot_Pinecone_FastAPI_backend
-# For now, assuming the name is the same as the issue was raised on this repo:
 git clone https://github.com/vijender883/EventBot
 cd EventBot
 ```
