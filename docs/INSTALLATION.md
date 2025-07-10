@@ -145,20 +145,3 @@ Once the backend server is running:
     streamlit run src/frontend/streamlit_app.py
     ```
 The Streamlit application will typically open in your web browser at `http://localhost:8501`. You can now upload PDFs and chat with the assistant through this interface.
-
-### 5. Set Environment Variables
-
-In your Render service's dashboard, navigate to the "Environment" section. Add the following environment variables, using your actual values:
-
--   `GEMINI_API_KEY`: `Your_Google_Gemini_API_Key`
--   `PINECONE_API_KEY`: `Your_Pinecone_API_Key`
--   `PINECONE_INDEX_NAME`: `Your_Pinecone_index_name`
--   `PINECONE_CLOUD`: `Your_Pinecone_cloud_provider` (e.g., `aws`)
--   `PINECONE_REGION`: `Your_Pinecone_region` (e.g., `us-east-1`)
--   `DATABASE_URL`: `Your_MySQL_connection_string`
--   `APP_ENV`: `production` (Reinforces the setting in `start.sh`)
--   `LOG_LEVEL`: `info` (or `debug` for more verbose logging during troubleshooting)
--   `PORT`: Render will set this, but your `start.sh` uses it.
--   `WORKERS`: (Optional, if you made it configurable in `start.sh`, e.g., `2` or `4`)
--   `GUNICORN_TIMEOUT`: (Optional, e.g., `120` or `300` if you have long running requests)
--   `PYTHON_VERSION`: Optionally specify your Python version (e.g., `3.10.0`) if needed.
