@@ -282,3 +282,72 @@ This document provides detailed specifications for the available API endpoints, 
             ```
 
 ---
+
+## API Testing
+
+You can test the API endpoints using `curl` or an API client like Postman. Below are example commands for each endpoint:
+
+### Health Check (`/health`)
+```bash
+curl http://localhost:${PORT:-8000}/health
+# Replace ${PORT:-8000} with your backend's port if different
+```
+Expected successful output (structure may vary based on current agent health details):
+```json
+{
+    "orchestrator": true,
+    "manager_agent": true,
+    "overall_health": true,
+    "active_agent": "manager",
+    "manager_details": {
+        "manager_agent": true,
+        "llm_connection": true,
+        "workflow_ready": true,
+        "combiner_agent": true,
+        "chatbot_agent_available": true,
+        "table_agent_available": true,
+        "overall_health": true
+    }
+}
+```
+*Note: The exact structure of `manager_agent_health` and other services might vary. Refer to the `/health` endpoint output of your running application for the most accurate details.*
+
+### Upload a PDF (`/uploadpdf`)
+Replace `path/to/your_document.pdf` with an actual PDF file path.
+```bash
+curl -X POST -F "file=@path/to/your_document.pdf" http://localhost:${PORT:-8000}/uploadpdf
+# Replace ${PORT:-8000} with your backend's port if different
+```
+Expected successful output:
+```json
+{
+  "success": true,
+  "message": "PDF 'your_document.pdf' processed and data stored.",
+  "filename": "your_document.pdf",
+  "pdf_uuid": "some-unique-identifier",
+  "tables_stored": 1, // Example
+  "text_chunks_stored": 10 // Example
+}
+```
+
+### Ask a Question (`/answer`)
+Ensure a PDF has been successfully uploaded and processed first. Replace `"your_pdf_uuid_here"` with the `pdf_uuid` received from the `/uploadpdf` response.
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is the main subject of this document?", "pdf_uuid": "your_pdf_uuid_here"}' \
+  http://localhost:${PORT:-8000}/answer
+# Replace ${PORT:-8000} with your backend's port if different
+```
+Expected output (will vary based on the PDF content and query):
+```json
+{
+  "answer": "The main subject of this document appears to be...",
+  "success": true,
+  "error": null,
+  "metadata": {
+      "used_table": false,
+      "used_rag": true
+  }
+}
+```

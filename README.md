@@ -14,7 +14,7 @@ A PDF document assistant with a FastAPI-based backend and a Streamlit-based fron
   - [Running the Backend](docs/INSTALLATION.md#1-start-the-backend-server)
   - [Running the Frontend](docs/INSTALLATION.md#2-start-the-frontend-application)
 - [📡 API Endpoints](#-api-endpoints)
-- [🌐 Deploy to Render.com](docs/INSTALLATION.md#-deploy-to-rendercom)
+- [🌐 Deploy to Render.com](docs/DEPLOYMENT.md)
 - [🔧 Development](#-development)
   - [Project Structure](#project-structure)
   - [Key Components](#key-components)
@@ -77,7 +77,7 @@ The API routes are primarily defined in `src/backend/routes/chat.py`. The root `
 | `/uploadpdf` | POST   | Uploads a PDF file for processing, text vectorization (Pinecone), and table storage (MySQL). | FormData: `file` (PDF file)   | `{"success": true, "message": "PDF processed...", "filename": "name.pdf", "tables_stored": 1, "text_chunks_stored": 10}`            |
 | `/answer`    | POST   | Asks a question about the processed PDF content.     | JSON: `{"query": "Your question?"}` | `{"answer": "AI generated answer.", "success": true, "error": null}`                                                                                           |
 
-For deployment instructions, see the [Detailed Installation and Setup Guide](docs/INSTALLATION.md#-deploy-to-rendercom).
+For deployment instructions, see the [Detailed Deployment Guide](docs/DEPLOYMENT.md).
 
 ## 🔧 Development
 
