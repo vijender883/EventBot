@@ -41,25 +41,6 @@ Once the virtual environment is activated:
 pip install -r requirements.txt
 ```
 
-## 🔑 API Keys Setup
-
-### Get Google Gemini API Key
-
-1.  **Visit Google AI Studio**: Navigate to [https://makersuite.google.com/app/apikey](https://makersuite.google.com/app/apikey) and sign in with your Google account.
-2.  **Create API Key**: Click "Create API Key" and follow the prompts (e.g., "Create API key in new project").
-3.  **Secure Your Key**: Copy the generated API key (it typically starts with `AIzaSy...`). Store it securely and never commit it to version control.
-
-### Get Pinecone API Key and Create Index
-
-1.  **Sign up for Pinecone**: Go to [https://www.pinecone.io/](https://www.pinecone.io/) and create a free account.
-2.  **Get API Key**: After logging into the Pinecone console, navigate to the "API Keys" section and copy your API key (e.g., `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
-3.  **Create a New Index** in the Pinecone console:
-    *   **Index Name**: Choose a descriptive name (e.g., `pdf-assistant-index`). This exact name will be used in your `.env` file.
-    *   **Dimensions**: Set to `768`. This is required for the `models/embedding-001` embedding model used by Gemini, which produces 768-dimensional vectors.
-    *   **Metric**: Select `cosine` for similarity search.
-    *   **Cloud Provider & Region**: Choose according to your preference (e.g., `AWS`, `us-east-1`). These details will also be needed for your `.env` file.
-    *   Click "Create Index".
-
 ## ⚙️ Environment Configuration
 
 ### 1. Create .env File
@@ -73,6 +54,25 @@ On Windows, use `copy` if `cp` is not available:
 ```bash
 copy .env.template .env
 ```
+
+### 2. API Keys Setup
+
+#### Get Google Gemini API Key
+
+1.  **Visit Google AI Studio**: Navigate to [https://makersuite.google.com/app/apikey](https://makersuite.google.com/app/apikey) and sign in with your Google account.
+2.  **Create API Key**: Click "Create API Key" and follow the prompts (e.g., "Create API key in new project").
+3.  **Secure Your Key**: Copy the generated API key (it typically starts with `AIzaSy...`). Store it securely and never commit it to version control.
+
+#### Get Pinecone API Key and Create Index
+
+1.  **Sign up for Pinecone**: Go to [https://www.pinecone.io/](https://www.pinecone.io/) and create a free account.
+2.  **Get API Key**: After logging into the Pinecone console, navigate to the "API Keys" section and copy your API key (e.g., `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+3.  **Create a New Index** in the Pinecone console:
+    *   **Index Name**: Choose a descriptive name (e.g., `pdf-assistant-index`). This exact name will be used in your `.env` file.
+    *   **Dimensions**: Set to `768`. This is required for the `models/embedding-001` embedding model used by Gemini, which produces 768-dimensional vectors.
+    *   **Metric**: Select `cosine` for similarity search.
+    *   **Cloud Provider & Region**: Choose according to your preference (e.g., `AWS`, `us-east-1`). These details will also be needed for your `.env` file.
+    *   Click "Create Index".
 
 ### 2. Configure .env File
 
@@ -108,21 +108,6 @@ ENDPOINT="http://localhost:8000" # URL for the backend API (default for FastAPI 
 - Ensure `PINECONE_INDEX_NAME`, `PINECONE_CLOUD`, and `PINECONE_REGION` in `.env` precisely match your Pinecone index settings.
 - The `ENDPOINT` variable is used by the Streamlit frontend to connect to the backend API. The default `http://localhost:8000` assumes the backend is running locally on the `PORT` specified for it. Adjust if your backend is configured for a different port (e.g., 5000 and `ENDPOINT="http://localhost:5000"`).
 - The `.env` file is included in `.gitignore` and should not be committed to version control.
-
-### 3. Verify Configuration
-
-After setting up `.env` and activating your virtual environment, run this command from the project root to check if backend variables are loaded:
-
-```bash
-python -c "from dotenv import load_dotenv; import os; load_dotenv(); print(f\"Gemini Key Loaded: {bool(os.getenv('GEMINI_API_KEY'))}\"); print(f\"Pinecone Key Loaded: {bool(os.getenv('PINECONE_API_KEY'))}\"); print(f\"Pinecone Index: {os.getenv('PINECONE_INDEX_NAME')}\"); print(f\"Database URL Set: {bool(os.getenv('DATABASE_URL'))}\"); print(f\"Log Level: {os.getenv('LOG_LEVEL')}\")"
-```
-This should output `True` for keys/DB URL being loaded and display your Pinecone index name and Log Level.
-
-To check if the frontend `ENDPOINT` variable is loaded:
-```bash
-python -c "from dotenv import load_dotenv; import os; load_dotenv(); print(f\"Endpoint: {os.getenv('ENDPOINT')}\")"
-```
-This should display the endpoint URL, e.g., `Endpoint: http://localhost:8000`.
 
 ## 🚀 Running Locally
 
@@ -160,133 +145,6 @@ Once the backend server is running:
     streamlit run src/frontend/streamlit_app.py
     ```
 The Streamlit application will typically open in your web browser at `http://localhost:8501`. You can now upload PDFs and chat with the assistant through this interface.
-
-### 3. Test the API (Optional)
-
-Use `curl` or an API client like Postman to interact with the endpoints.
-
-#### Health Check (`/health`)
-```bash
-curl http://localhost:${PORT:-8000}/health
-# Replace ${PORT:-8000} with your backend's port if different
-```
-Expected successful output (structure may vary based on current agent health details):
-```json
-{
-    "orchestrator": true,
-    "manager_agent": true,
-    "overall_health": true,
-    "active_agent": "manager",
-    "manager_details": {
-        "manager_agent": true,
-        "llm_connection": true,
-        "workflow_ready": true,
-        "combiner_agent": true,
-        "chatbot_agent_available": true,
-        "table_agent_available": true,
-        "overall_health": true
-    }
-}
-```
-*Note: The exact structure of `manager_agent_health` and other services might vary. Refer to the `/health` endpoint output of your running application for the most accurate details.*
-
-#### Upload a PDF (`/uploadpdf`)
-Replace `path/to/your_document.pdf` with an actual PDF file path.
-```bash
-curl -X POST -F "file=@path/to/your_document.pdf" http://localhost:${PORT:-8000}/uploadpdf
-# Replace ${PORT:-8000} with your backend's port if different
-```
-Expected successful output:
-```json
-{
-  "success": true,
-  "message": "PDF 'your_document.pdf' processed and data stored.",
-  "filename": "your_document.pdf",
-  "pdf_uuid": "some-unique-identifier",
-  "tables_stored": 1, // Example
-  "text_chunks_stored": 10 // Example
-}
-```
-
-#### Ask a Question (`/answer`)
-Ensure a PDF has been successfully uploaded and processed first. Replace `"your_pdf_uuid_here"` with the `pdf_uuid` received from the `/uploadpdf` response.
-```bash
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What is the main subject of this document?", "pdf_uuid": "your_pdf_uuid_here"}' \
-  http://localhost:${PORT:-8000}/answer
-# Replace ${PORT:-8000} with your backend's port if different
-```
-Expected output (will vary based on the PDF content and query):
-```json
-{
-  "answer": "The main subject of this document appears to be...",
-  "success": true,
-  "error": null,
-  "metadata": {
-      "used_table": false,
-      "used_rag": true
-  }
-}
-```
-
-## 🌐 Deploy to Render.com
-
-Render.com offers a convenient platform for deploying this FastAPI application.
-
-### 1. Prepare for Deployment
-
-1.  Ensure `requirements.txt` is up-to-date: `pip freeze > requirements.txt`.
-2.  Make sure the `start.sh` script is executable. If you haven't done so:
-    ```bash
-    git update-index --chmod=+x start.sh
-    ```
-3.  Commit your latest changes and push them to your GitHub repository:
-    ```bash
-    git add .
-    git commit -m "Prepare for Render deployment"
-    git push origin main
-    ```
-
-### 2. Create Render Account
-
-1.  Go to [render.com](https://render.com) and sign up (using GitHub is recommended).
-2.  Connect your GitHub account to Render if you haven't already.
-
-### 3. Create Web Service on Render
-
-1.  From the Render dashboard, click "New +" → "Web Service".
-2.  Connect your GitHub repository where the backend code is hosted.
-3.  Select the specific repository.
-
-### 4. Configure Service
-
--   **Name**: A unique name for your service (e.g., `pdf-assistant-backend`).
--   **Region**: Choose a region geographically close to your users.
--   **Branch**: `main` (or your primary deployment branch).
--   **Runtime**: `Python 3`. Render should auto-detect this.
--   **Build Command**: `pip install -r requirements.txt`. This is usually auto-detected.
--   **Start Command**: `./start.sh`. This script uses Gunicorn with Uvicorn workers to run the FastAPI app.
-    *Example contents of `start.sh` for FastAPI (ensure it matches your project's `start.sh`):*
-    ```bash
-    #!/bin/bash
-    set -e # Exit immediately if a command exits with a non-zero status
-    export APP_ENV=${APP_ENV:-production} # Ensure app runs in production mode, allow override
-    export LOG_LEVEL=${LOG_LEVEL:-info} # Set default log level, allow override
-    # Gunicorn command with Uvicorn workers:
-    # --bind 0.0.0.0:$PORT : Bind to all network interfaces on the port Render provides
-    # --workers <num_workers> : Adjust based on your Render plan's resources (e.g., 2 or (2*CPU_CORES)+1)
-    # --worker-class uvicorn.workers.UvicornWorker : Use Uvicorn workers for ASGI
-    # --timeout 120 : Increase if PDF processing takes longer; be mindful of Render's limits
-    # --log-level $LOG_LEVEL : Pass log level to Gunicorn/Uvicorn
-    # app:app : Points to the FastAPI app instance (e.g., `app` in `app.py`)
-    gunicorn --bind 0.0.0.0:$PORT \
-             --workers ${WORKERS:-2} \
-             --worker-class uvicorn.workers.UvicornWorker \
-             --timeout ${GUNICORN_TIMEOUT:-120} \
-             --log-level $LOG_LEVEL \
-             app:app
-    ```
 
 ### 5. Set Environment Variables
 
@@ -357,7 +215,6 @@ This project should include automated tests to ensure reliability. Assuming `pyt
 
 2.  **API Key Issues (`GEMINI_API_KEY`, `PINECONE_API_KEY`, `DATABASE_URL`)**:
     *   **`.env` File**: Ensure `.env` exists in the project root, is correctly named, and its content is accurate (no extra spaces/quotes around keys/values, ensure full connection string for `DATABASE_URL`).
-    *   **Verification**: Use the script in [Verify Configuration](#3-verify-configuration) to check if keys are loaded.
     *   **Render Environment Variables**: Double-check that environment variables are correctly set in the Render dashboard and that the service was re-deployed after changes.
 
 3.  **Pinecone Connection Problems**:
